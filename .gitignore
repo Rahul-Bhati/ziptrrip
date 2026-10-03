@@ -15,6 +15,7 @@ coverage/
 
 # environment / editor / OS noise
 .env
+.claude/
 .vscode/*
 !.vscode/settings.json
 .idea/

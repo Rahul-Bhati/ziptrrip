@@ -9,8 +9,8 @@ A step-by-step record of how this project was built: **what** was done in each s
 | 3 | Service layer + validation (Zod) | ✅ Done |
 | 4 | Routes, controllers, error middleware | ✅ Done |
 | 5 | Tests (Vitest + Supertest) + REST Client / Postman files | ✅ Done |
-| 6 | Frontend: todo list page (MPA) | ⏳ Next |
-| 7 | Frontend: single todo page (`?id=`) | — |
+| 6 | Frontend: todo list page (MPA) | ✅ Done |
+| 7 | Frontend: single todo page (`?id=`) | ⏳ Next |
 | 8 | Documentation + final cleanup | — |
 
 ---
@@ -365,3 +365,87 @@ How to run the tests, the structure, what is covered, and how to use the REST Cl
 - `npm test`: **5 files, 99 tests, all passing** in ~1.3 s.
 - `npm run test:coverage`: **97.6% lines, 97.2% statements**.
 - Postman collection run with **newman** against the real built server: **19 requests, 39 assertions, 0 failures**.
+
+---
+
+## Step 6: Frontend, todo list page (MPA)
+
+**Goal:** a React frontend that is a real **Multi-Page Application**, starting with page 1: the todo list.
+
+### What "MPA instead of SPA" means here
+
+| | SPA (what we did NOT build) | MPA (what we built) |
+|---|---|---|
+| HTML files | One `index.html` | One per page: `index.html`, `todo.html` |
+| Navigation | JS router swaps components, no page load | A normal `<a href="/todo.html?id=3">`, a **full page load** |
+| React apps | One app for the whole site | One small React app **per page** |
+| Router library | React Router / TanStack Router | None needed |
+
+In Vite, an MPA is configured by listing every HTML file as a **build input** (`vite.config.ts → build.rolldownOptions.input`). The build then outputs one HTML file per page, each with its own JS bundle; shared code (React, API client) is split into common chunks automatically.
+
+### Files
+
+#### `client/package.json`
+- Dependencies: `react`, `react-dom` (React 19).
+- Dev: `vite` 8, `@vitejs/plugin-react` (JSX + Fast Refresh), `typescript`, `@types/*`, `vitest`.
+- Scripts: `dev` (Vite dev server, port 5173), `build` (**typecheck first**, then `vite build`), `preview`, `typecheck`, `test`.
+- *Why no `npm create vite`?* The scaffolder is interactive and adds demo boilerplate (logos, counter) that would only be deleted; writing the few config files by hand keeps every line intentional.
+
+#### `client/vite.config.ts`
+- `server.proxy: { "/api": "http://localhost:3000" }`: in development, the browser only talks to `localhost:5173`; Vite forwards `/api/*` to Express. **Same origin → no CORS configuration needed**, and the frontend code uses relative URLs (`/api/todos`) that also work in production, where Express serves both.
+- `build.rolldownOptions.input`: the MPA page list (Vite 8 uses **Rolldown**, so the option is `rolldownOptions`; `rollupOptions` is the deprecated name).
+- `import.meta.dirname`: absolute folder of the config file (Node 20.11+), so paths work from any working directory.
+
+#### `client/tsconfig.json` + `client/tsconfig.node.json`
+Two configs because the code runs in two environments: `src/` runs in the **browser** (DOM types, no Node types, so `process` or `fs` can't be used by mistake), while `vite.config.ts` runs in **Node** (Node types, no DOM).
+- `moduleResolution: "Bundler"`: Vite resolves imports, so no `.js` extensions (unlike the server, which runs on plain Node).
+- `verbatimModuleSyntax`: type-only imports must say `import type`, which guarantees they're erased (important for the shared types below).
+- `isolatedModules`: Vite compiles each file alone; forbids TS features that need the whole program.
+
+#### `client/index.html`
+Page 1. Just a `<div id="root">` and `<script type="module" src="/src/pages/list/main.tsx">`. Inline SVG emoji favicon (no image file).
+
+#### `client/src/types.ts`: shared types
+`export type { Todo, Priority, ... } from "../../server/src/types/todo"`: the frontend uses the **server's** type definitions. If the API's Todo shape changes, the frontend stops compiling instead of breaking at runtime. Because it is `export type`, nothing from the server is bundled into the browser code. Adds `NewTodo` (POST body) and `TodoChanges` (PATCH body).
+
+#### `client/src/api/client.ts` + `client/src/api/todos.ts`
+- `request()` wraps `fetch`: adds `/api`, JSON headers, parses the body, handles `204`.
+- **Every failure becomes an `ApiError`** (status, code, message, field details): network failure ("Cannot reach the server"), and API errors from the `{ error: { code, message, details } }` envelope. Components show `error.userMessage` and need no other error logic.
+- Note: `fetch` only rejects on *network* failure; a `404` or `500` is a normal response, which is why `response.ok` is checked.
+- `todos.ts`: one function per endpoint (`listTodos`, `getTodo`, `createTodo`, `updateTodo`, `deleteTodo`, `clearCompleted`). Components never build URLs.
+
+#### `client/src/lib/`
+- `dates.ts`: due-date logic. **Timezone trap avoided:** `new Date("2026-10-10")` is midnight **UTC**, which is still Oct 9 in the Americas. Due dates are calendar dates, so they're compared as `YYYY-MM-DD` strings (which sort like dates) against *local* today, and day differences are computed in UTC (no daylight-saving off-by-one). Also `formatDate`, `formatDateTime`, `timeAgo` (via the built-in `Intl` APIs, so they're shown in the user's own locale, no date library).
+- `options.ts`: labels and choices. `PRIORITY_LABELS: Record<Priority, string>` must cover every priority, so a new server priority is a compile error here until it's labelled. Also `readListParams` / `toQueryString`: **list state ↔ URL**.
+- `mount.tsx`: `mountPage(Page)`, which mounts a page into `#root` inside `<StrictMode>` and imports the global CSS. Every HTML page's entry file is one line.
+- Tests: `dates.test.ts`, `options.test.ts` (17 tests: day arithmetic across year/DST boundaries, due descriptions, URL parsing incl. invalid values, round-trip).
+
+#### `client/src/hooks/useDebouncedValue.ts`
+Delays a value until it stops changing for 300 ms. Typing "milk" sends **one** search request, not four.
+
+#### `client/src/components/`
+`PriorityBadge`, `DueDateLabel` (red when overdue, never for completed todos), `ErrorBanner` (`role="alert"` so screen readers announce it; optional Retry / Dismiss).
+
+#### `client/src/pages/list/`: the list page
+- `main.tsx`: entry point of `index.html`: `mountPage(ListPage)`.
+- `ListPage.tsx`: page layout and state.
+  - **Filters live in the URL** (`?status=active&search=milk&sort=priority-desc`), read on load and written with `history.replaceState` (no history entry per keystroke). Reload, the back button from the detail page, or a shared link restore the same view. In an MPA every navigation is a fresh page load, so the URL is the natural place for page state.
+  - **Re-fetch after every change** instead of patching local state. One extra small request, but the list, its sort order, the active filter and the counts can never drift from the database. (Optimistic updates would feel faster but need rollback logic on failure.)
+  - Empty states: "Nothing to do yet" vs "No todos match your filters" + **Clear filters**.
+- `useTodoList.ts`: data loading hook. Keeps the old list visible while reloading (dimmed, `aria-busy`), and **aborts the previous request** when filters change. That prevents a race where a slow response for "mi" arrives after the one for "milk" and overwrites it.
+- `AddTodoForm.tsx`: title (required), priority, due date, optional description (revealed on demand). Client-side checks are only for convenience (`maxLength`, empty title); **the server is the real validator**, and its field messages are displayed. Focus returns to the title box after adding, for fast entry.
+- `Toolbar.tsx`: status tabs with live counts, search box, sort dropdown (one dropdown of sortBy+order pairs).
+- `TodoItem.tsx`: checkbox (toggle completed), **title as a real `<a href="/todo.html?id=…">`** (MPA navigation), description preview (one line), priority + due badges, inline title edit (Enter saves, Escape cancels), delete with confirmation. Buttons are disabled while a request runs (no double submits).
+
+#### `client/src/styles.css`
+Plain CSS with custom properties; **dark mode follows the OS** (`prefers-color-scheme`); visible keyboard focus outlines; responsive under 560 px. *Why no Tailwind / UI library?* Two pages don't justify the setup, and plain CSS is fully explainable.
+
+### Rejected alternatives
+- **Next.js**: its `<Link>` navigation is client-side (SPA-like), which makes "this is an MPA" hard to defend.
+- **React Router**: an SPA router by definition.
+- **React Query / SWR**: excellent for caching, but one list and one detail fetch don't need it; a 30-line hook with `AbortController` shows the underlying problem (races, cancellation) explicitly.
+- **Axios**: `fetch` is built into browsers; the wrapper is ~40 lines.
+
+### Verification
+- `npm run typecheck` (both configs), `npm test` (**17 tests**), `vite build` all pass.
+- Ran both dev servers and used the page in the browser: added todos (with priority / due date), inline-edited a title, toggled completed, filtered (Active), sorted (priority), searched ("milk"); URL updated to `?status=active&sort=priority-desc`, and **loading that URL fresh restored the same view**. Overdue date shown in red ("Overdue by 1 day"), completed item struck through, counts correct, no console errors. Server log shows each change followed by a list re-fetch.

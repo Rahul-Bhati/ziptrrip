@@ -1,0 +1,26 @@
+{
+  // Browser code (src/). The Vite config runs in Node and has its own tsconfig.node.json.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    // "Bundler": imports are resolved by Vite, so no ".js" extensions needed here
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Vite compiles each file on its own: forbid TS features that need whole-program info,
+    // and keep `import type` so type-only imports are always erased from the output
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src"]
+}

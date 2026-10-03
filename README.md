@@ -5,7 +5,7 @@ A full-stack todo application built for the Ziptrrip tech assignment.
 - **Backend:** Node.js + Express 5 + TypeScript, REST CRUD API, SQLite database
 - **Frontend:** React + Vite as a **Multi-Page Application (MPA)**: a todo list page and a single-todo page (`todo.html?id=<id>`)
 
-> 🚧 **Status: in progress.** The backend (REST API, 99 tests, REST Client + Postman files) is complete. The frontend is next.
+> 🚧 **Status: in progress.** The backend (REST API, 99 tests, REST Client + Postman files) and the todo list page are complete. The single-todo page is next.
 > See [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for a step-by-step record of what was built and why.
 
 ---
@@ -41,7 +41,8 @@ A full-stack todo application built for the Ziptrrip tech assignment.
 | Request logging, graceful shutdown | ✅ Done |
 | Unit + API tests (99 tests, ~97% coverage) | ✅ Done |
 | REST Client (`.http`) + Postman collection (with test assertions) | ✅ Done |
-| Todo list page | ⏳ Planned (step 6) |
+| Todo list page: add, toggle, inline edit, delete, filter tabs with counts, search, sort, clear completed, filters kept in the URL | ✅ Done |
+| Overdue / due-soon highlighting, dark mode, keyboard + screen-reader friendly | ✅ Done |
 | Single todo page (`todo.html?id=<id>`) | ⏳ Planned (step 7) |
 
 ## Tech stack
@@ -97,7 +98,19 @@ HTTP request → route → controller → service (validates) → repository (SQ
                                         └── errors → error middleware → JSON error response
 ```
 
-Planned: a `client/` folder for the frontend.
+```
+client/                           # frontend (React + Vite, multi-page)
+├── index.html                    # page 1: todo list
+├── vite.config.ts                # MPA inputs + /api proxy to the server
+└── src/
+    ├── types.ts                  # re-exports the server's Todo types
+    ├── api/                      # fetch wrapper (ApiError) + one function per endpoint
+    ├── lib/                      # dates, labels/options, mountPage()
+    ├── hooks/                    # useDebouncedValue
+    ├── components/               # PriorityBadge, DueDateLabel, ErrorBanner
+    ├── pages/list/               # list page: ListPage, AddTodoForm, Toolbar, TodoItem, useTodoList
+    └── styles.css
+```
 
 ## Getting started
 
@@ -153,6 +166,18 @@ npm test
 ```
 
 No setup needed: each test uses its own in-memory database.
+
+### 6. Run the frontend
+
+Keep the server running, and in a second terminal:
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+Open **http://localhost:5173**. Vite forwards `/api` requests to the server on port 3000.
 
 ### Production build
 
@@ -237,8 +262,8 @@ Table `todos` (SQLite):
 | Save data in a file or database | SQLite (`server/src/db`) | ✅ |
 | Unit tests | `server/tests`, [docs/TESTING.md](docs/TESTING.md) | ✅ |
 | Postman / REST Client files | `server/postman/`, `server/requests.http` | ✅ |
-| React app as an MPA | — | ⏳ Step 6 |
-| Todo list page | — | ⏳ Step 6 |
+| React app as an MPA | `client/` (one HTML file per page) | ✅ |
+| Todo list page | `client/index.html`, `client/src/pages/list/` | ✅ |
 | Single todo page with id query parameter | — | ⏳ Step 7 |
 | Features documented in `.md` files | `README.md`, `docs/` | 🚧 Updated every step |
 | Extra: TypeScript | Whole project | ✅ |
