@@ -1,0 +1,10 @@
+# Store and check out every text file with LF line endings, on every OS.
+# Without this, Git on Windows converts LF <-> CRLF and diffs get noisy.
+* text=auto eol=lf
+
+# Binary files: never touch line endings
+*.db binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary

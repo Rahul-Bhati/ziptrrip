@@ -5,8 +5,8 @@ A step-by-step record of how this project was built: **what** was done in each s
 | Step | Topic | Status |
 |---|---|---|
 | 1 | Server project setup (package.json, TypeScript, app skeleton) | ✅ Done |
-| 2 | Database layer (SQLite connection, schema, repository) | ⏳ Next |
-| 3 | Service layer + validation (Zod) | — |
+| 2 | Database layer (SQLite connection, schema, repository) | ✅ Done |
+| 3 | Service layer + validation (Zod) | ⏳ Next |
 | 4 | Routes, controllers, error middleware | — |
 | 5 | Tests (Vitest + Supertest) + REST Client / Postman files | — |
 | 6 | Frontend: todo list page (MPA) | — |
@@ -93,3 +93,87 @@ In later steps `createApp()` will **receive the database as a parameter** (*depe
 - `npm run build`: produces `dist/app.js`, `dist/index.js`
 - `GET /api/health` → `200 {"status":"ok"}`
 - `better-sqlite3` native module loads on Windows / Node 22 (SQLite 3.53)
+
+---
+
+## Step 2: Database layer
+
+**Goal:** store todos in SQLite and put **all SQL in one place** (the repository), so the rest of the app works with plain `Todo` objects.
+
+```
+service (step 3)  →  TodoRepository  →  better-sqlite3  →  data/todos.db
+                     (only SQL here)
+```
+
+### Files
+
+#### `.gitattributes`
+`* text=auto eol=lf` makes every text file be stored and checked out with LF line endings on every OS. This removes the `LF will be replaced by CRLF` warnings and stops whole-file "changes" caused only by line endings. `*.db`, images and PDFs are marked `binary` so git never alters them.
+
+#### `server/src/types/todo.ts`
+The shared vocabulary of the app.
+- **`as const` arrays** (`PRIORITIES`, `STATUS_FILTERS`, `SORT_FIELDS`, `SORT_ORDERS`) are the single source of truth for allowed values. TS derives union types from them (`Priority = "low" | "medium" | "high"`), and in step 3 Zod builds its validators from the same arrays. Adding a priority means changing exactly one line.
+  *Why not a TS `enum`?* Enums generate extra runtime code and behave oddly (numeric enums accept any number). `as const` arrays + unions are plain JS and work directly with Zod.
+- **`Todo`**: the API shape (camelCase, `completed: boolean`).
+- **`CreateTodoData`**: all fields **required**. Defaults (priority `medium`, empty description) are a *business decision*, so they belong to the validation layer (step 3), not the repository.
+- **`UpdateTodoData`**: `Partial<...>`, so every field is optional. Important rule: `undefined` = "not sent, don't change", but `dueDate: null` = "remove the due date".
+- **`TodoFilters`**, **`TodoStats`**: inputs/outputs for listing and counting.
+
+#### `server/src/db/schema.ts`
+The `CREATE TABLE` statement, as a TS string.
+- *Why not a `.sql` file?* `tsc` only compiles `.ts` files. A `.sql` file would not be copied into `dist/`, so the built server would crash. A string avoids an extra copy step.
+- `CREATE TABLE IF NOT EXISTS`: safe to run on every startup.
+- **Column choices:**
+  - `id INTEGER PRIMARY KEY AUTOINCREMENT`: **AUTOINCREMENT guarantees ids are never reused** after a delete. Without it, deleting todo 5 and creating a new one could give the new todo id 5, and an old link `todo.html?id=5` would silently show a different todo.
+  - `completed INTEGER CHECK (completed IN (0,1))`: SQLite has no BOOLEAN type.
+  - `due_date TEXT CHECK (due_date IS NULL OR date(due_date) = due_date)`: SQLite stores dates as text. `date('2026-02-30')` returns NULL (and normalises other formats), so the check only passes for a real `YYYY-MM-DD` date.
+  - `created_at` / `updated_at TEXT`: ISO 8601 strings like `2026-10-03T08:15:30.123Z`. They sort correctly as text and include the timezone (`Z` = UTC).
+- **CHECK constraints = defense in depth.** Zod (step 3) validates first. The DB rules are the last line of defense if a bug ever skips validation. We deliberately did **not** duplicate the title max length in the DB, because then one limit would live in two places and could drift apart.
+- **No indexes:** with a personal todo list (hundreds of rows) a full scan takes microseconds. An index on `completed` would barely help (only two values). Add indexes when measurements show a need.
+
+#### `server/src/db/database.ts`
+`createDatabase(filename)` opens the DB and applies the schema.
+- `mkdirSync(..., { recursive: true })`: SQLite creates the file but not missing folders.
+- **`journal_mode = WAL`** (write-ahead log): readers are not blocked while a write is in progress. It's the recommended mode for a server, and it creates `-wal`/`-shm` side files (already in `.gitignore`).
+- **`":memory:"`**: a throwaway database in RAM. Tests will use it: fast, always starts empty, no files left behind.
+- Exports `type DB` so other files don't depend on better-sqlite3's type names directly.
+
+#### `server/src/repositories/todo.repository.ts`
+The **only file that contains SQL**. A class that receives the DB in its constructor (**dependency injection**): the real server passes the file DB, tests pass `:memory:`.
+
+*Why a class and not loose functions?* It holds the `db` and the prepared statements together, and gives a named type (`TodoRepository`) to pass into the service layer.
+
+| Method | Returns | Notes |
+|---|---|---|
+| `findAll(filters)` | `Todo[]` | Status filter, search, sort |
+| `findById(id)` | `Todo \| undefined` | `undefined` → service turns it into a 404 |
+| `create(data)` | `Todo` | Uses `INSERT ... RETURNING` |
+| `update(id, changes)` | `Todo \| undefined` | Partial update, bumps `updated_at` |
+| `delete(id)` | `boolean` | `false` if the id didn't exist |
+| `deleteCompleted()` | `number` | How many were removed |
+| `stats()` | `TodoStats` | total / active / completed |
+
+**Key techniques (likely interview questions):**
+
+1. **SQL injection prevention.** Every *value* is sent as a parameter (`?` or `@name`), never concatenated into the SQL string. The driver sends values separately from the SQL, so input like `'; DROP TABLE todos; --` is just text.
+2. **Sorting safely.** `ORDER BY` columns *cannot* be parameters (parameters are values, not SQL). So user input only picks a **key** of the fixed `SORT_COLUMNS` map; it never reaches the SQL itself. The same allow-list idea is used for update columns (`UPDATABLE_COLUMNS`).
+3. **Prepared statements reused.** Fixed queries (`findById`, insert, delete, stats) are prepared once in the constructor, so SQLite parses them a single time. Dynamic queries (`findAll`, `update`) change shape with the input, so they are prepared per call.
+4. **`RETURNING`** (SQLite 3.35+): `INSERT/UPDATE ... RETURNING` gives back the saved row in the same query. That avoids a second `SELECT` and any chance of reading a different row.
+5. **Row mapping (`toTodo`).** The DB uses `snake_case` and `0/1`; the API uses `camelCase` and booleans. Converting in one function means no DB detail leaks out of this file.
+6. **Sorting details:**
+   - Priority as text would sort `high < low < medium` (alphabetical), so `CASE` maps it to 1/2/3.
+   - `NULLS LAST`: todos without a due date go to the end in **both** directions.
+   - `id` as a **tie-breaker**: rows with equal values (e.g. same `created_at` millisecond) always come back in the same order. Without it, the order of equal rows is undefined.
+   - `title COLLATE NOCASE`: "apple" and "Banana" sort alphabetically regardless of case.
+7. **Search:** `LIKE` is case-insensitive for English letters in SQLite. `%` and `_` are LIKE wildcards, so `escapeLike()` escapes them. Searching `50%` then finds the literal text "50%".
+8. **Booleans:** better-sqlite3 refuses to bind JS `true/false`, so `update` converts them to `1/0`.
+9. **Partial update:** builds `SET` only from fields that were actually sent. An empty update doesn't touch `updated_at` (nothing changed).
+
+**Rejected alternatives**
+- *ORM (Prisma / TypeORM / Drizzle):* would hide the SQL. For one table, raw SQL is short, fast, and fully explainable.
+- *JSON file storage:* would need hand-written filtering/sorting, and concurrent writes can corrupt the file.
+- *Async driver (`sqlite3` package):* callback/Promise overhead for no benefit, since SQLite runs in-process.
+
+### Verification
+- `npm run typecheck` passes.
+- A throwaway script (not committed; real tests come in step 5) ran **21 checks against an in-memory DB, all passing**: create/find/update/delete, filters, case-insensitive search, `%` escaping, all sort orders including nulls-last, partial update clearing `dueDate`, stats, DB CHECKs rejecting `2026-02-30` and blank titles, and AUTOINCREMENT not reusing ids.
