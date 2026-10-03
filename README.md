@@ -5,7 +5,7 @@ A full-stack todo application built for the Ziptrrip tech assignment.
 - **Backend:** Node.js + Express 5 + TypeScript, REST CRUD API, SQLite database
 - **Frontend:** React + Vite as a **Multi-Page Application (MPA)**: a todo list page and a single-todo page (`todo.html?id=<id>`)
 
-> 🚧 **Status: in progress.** The backend REST API is complete. Tests, API client files and the frontend are next.
+> 🚧 **Status: in progress.** The backend (REST API, 99 tests, REST Client + Postman files) is complete. The frontend is next.
 > See [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for a step-by-step record of what was built and why.
 
 ---
@@ -39,8 +39,8 @@ A full-stack todo application built for the Ziptrrip tech assignment.
 | Counts (total / active / completed) returned with the list | ✅ Done (API) |
 | Validation with per-field error messages, consistent JSON errors | ✅ Done |
 | Request logging, graceful shutdown | ✅ Done |
-| Unit + API tests | ⏳ Planned (step 5) |
-| REST Client (`.http`) + Postman collection | ⏳ Planned (step 5) |
+| Unit + API tests (99 tests, ~97% coverage) | ✅ Done |
+| REST Client (`.http`) + Postman collection (with test assertions) | ✅ Done |
 | Todo list page | ⏳ Planned (step 6) |
 | Single todo page (`todo.html?id=<id>`) | ⏳ Planned (step 7) |
 
@@ -64,11 +64,16 @@ ziptrrip/
 ├── README.md                     # this file
 ├── docs/
 │   ├── API.md                    # full API reference
+│   ├── TESTING.md                # how to run tests, REST Client and Postman
 │   └── BUILD_LOG.md              # step-by-step build decisions
 └── server/                       # backend (Express + TypeScript)
     ├── package.json
     ├── tsconfig.json             # type-checking config (src + tests)
     ├── tsconfig.build.json       # build config (src only → dist/)
+    ├── vitest.config.ts          # test runner + coverage config
+    ├── requests.http             # VS Code REST Client requests
+    ├── postman/                  # Postman collection (with tests)
+    ├── tests/                    # unit + API tests (Vitest + Supertest)
     ├── data/                     # SQLite database file (created on first run, not committed)
     └── src/
         ├── index.ts              # entry point: open DB, start server, graceful shutdown
@@ -92,7 +97,7 @@ HTTP request → route → controller → service (validates) → repository (SQ
                                         └── errors → error middleware → JSON error response
 ```
 
-Planned: `server/tests`, API client files, and a `client/` folder for the frontend.
+Planned: a `client/` folder for the frontend.
 
 ## Getting started
 
@@ -139,6 +144,16 @@ curl -X POST http://localhost:3000/api/todos -H "Content-Type: application/json"
 curl "http://localhost:3000/api/todos?status=active&sortBy=priority"
 ```
 
+Or use the ready-made request files: `server/requests.http` (VS Code REST Client) or `server/postman/ziptrrip-todos.postman_collection.json` (Postman). See [docs/TESTING.md](docs/TESTING.md).
+
+### 5. Run the tests
+
+```bash
+npm test
+```
+
+No setup needed: each test uses its own in-memory database.
+
 ### Production build
 
 ```bash
@@ -170,7 +185,9 @@ Run these inside the `server/` folder:
 | `npm run build` | Compile TypeScript → `dist/` |
 | `npm start` | Run the compiled server |
 | `npm run typecheck` | Check types without building |
-| `npm test` | Run tests (tests are added in step 5) |
+| `npm test` | Run all tests once |
+| `npm run test:watch` | Re-run tests on file changes |
+| `npm run test:coverage` | Tests + coverage report (`coverage/index.html`) |
 
 ## API overview
 
@@ -208,6 +225,7 @@ Table `todos` (SQLite):
 | Document | Contents |
 |---|---|
 | [docs/API.md](docs/API.md) | Every endpoint: parameters, examples, status codes, errors |
+| [docs/TESTING.md](docs/TESTING.md) | Running tests, what is covered, REST Client and Postman usage |
 | [docs/BUILD_LOG.md](docs/BUILD_LOG.md) | What was built in each step, why, and which alternatives were rejected |
 
 ## Assignment checklist
@@ -217,8 +235,8 @@ Table `todos` (SQLite):
 | JavaScript / TypeScript server | `server/` | ✅ |
 | CRUD APIs for todos | `server/src/routes`, [docs/API.md](docs/API.md) | ✅ |
 | Save data in a file or database | SQLite (`server/src/db`) | ✅ |
-| Unit tests | — | ⏳ Step 5 |
-| Postman / REST Client files | — | ⏳ Step 5 |
+| Unit tests | `server/tests`, [docs/TESTING.md](docs/TESTING.md) | ✅ |
+| Postman / REST Client files | `server/postman/`, `server/requests.http` | ✅ |
 | React app as an MPA | — | ⏳ Step 6 |
 | Todo list page | — | ⏳ Step 6 |
 | Single todo page with id query parameter | — | ⏳ Step 7 |
@@ -226,3 +244,5 @@ Table `todos` (SQLite):
 | Extra: TypeScript | Whole project | ✅ |
 | Extra: Database | SQLite | ✅ |
 | Extra: Code organisation | Layered: routes / controllers / services / repositories | ✅ |
+| Extra: Unit tests | 99 tests, ~97% coverage | ✅ |
+| Extra: Postman / REST Client files | Both, with assertions in Postman | ✅ |

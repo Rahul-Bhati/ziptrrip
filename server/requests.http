@@ -1,0 +1,133 @@
+###############################################################################
+# Ziptrrip Todo API - REST Client requests
+#
+# How to use (VS Code):
+#   1. Install the "REST Client" extension (humao.rest-client)
+#   2. Start the server: `npm run dev` (in the server folder)
+#   3. Click "Send Request" above any request below
+#
+# Run "Create a todo" first: its id is captured into {{todoId}} and reused
+# by the requests that follow.
+###############################################################################
+
+@baseUrl = http://localhost:3000/api
+@todoId = {{createTodo.response.body.$.data.id}}
+
+
+### Health check → 200
+GET {{baseUrl}}/health
+
+
+###############################################################################
+# CRUD
+###############################################################################
+
+### Create a todo → 201 + Location header
+# @name createTodo
+POST {{baseUrl}}/todos
+Content-Type: application/json
+
+{
+  "title": "Buy milk",
+  "description": "2 litres, full cream",
+  "priority": "high",
+  "dueDate": "2026-10-10"
+}
+
+
+### Create a todo with only a title (defaults: medium priority, no due date) → 201
+POST {{baseUrl}}/todos
+Content-Type: application/json
+
+{
+  "title": "Walk the dog"
+}
+
+
+### List all todos (newest first) + stats → 200
+GET {{baseUrl}}/todos
+
+
+### List active todos, highest priority first → 200
+GET {{baseUrl}}/todos?status=active&sortBy=priority&order=desc
+
+
+### Search title/description, sorted by due date (no due date last) → 200
+GET {{baseUrl}}/todos?search=milk&sortBy=dueDate&order=asc
+
+
+### Get one todo → 200
+GET {{baseUrl}}/todos/{{todoId}}
+
+
+### Mark as completed → 200
+PATCH {{baseUrl}}/todos/{{todoId}}
+Content-Type: application/json
+
+{
+  "completed": true
+}
+
+
+### Edit title and remove the due date → 200
+PATCH {{baseUrl}}/todos/{{todoId}}
+Content-Type: application/json
+
+{
+  "title": "Buy oat milk",
+  "dueDate": null
+}
+
+
+### Delete all completed todos → 200 { data: { deleted: n } }
+DELETE {{baseUrl}}/todos/completed
+
+
+### Delete one todo → 204 (run "Create a todo" again first if it was already deleted)
+DELETE {{baseUrl}}/todos/{{todoId}}
+
+
+###############################################################################
+# Error cases
+###############################################################################
+
+### Validation errors: every problem reported at once → 400 VALIDATION_ERROR
+POST {{baseUrl}}/todos
+Content-Type: application/json
+
+{
+  "title": "",
+  "priority": "urgent",
+  "dueDate": "2026-02-30",
+  "extra": true
+}
+
+
+### Malformed JSON → 400 INVALID_JSON
+POST {{baseUrl}}/todos
+Content-Type: application/json
+
+{ "title": "missing closing brace"
+
+
+### Empty update → 400 "Provide at least one field to update"
+PATCH {{baseUrl}}/todos/{{todoId}}
+Content-Type: application/json
+
+{}
+
+
+### Invalid id → 400
+GET {{baseUrl}}/todos/abc
+
+
+### Unknown id → 404 NOT_FOUND
+GET {{baseUrl}}/todos/999999
+
+
+### Invalid query param → 400
+GET {{baseUrl}}/todos?status=done&sortBy=name
+
+
+### Unknown route → 404 ROUTE_NOT_FOUND
+GET {{baseUrl}}/does-not-exist

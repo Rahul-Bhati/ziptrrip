@@ -8,8 +8,8 @@ A step-by-step record of how this project was built: **what** was done in each s
 | 2 | Database layer (SQLite connection, schema, repository) | ✅ Done |
 | 3 | Service layer + validation (Zod) | ✅ Done |
 | 4 | Routes, controllers, error middleware | ✅ Done |
-| 5 | Tests (Vitest + Supertest) + REST Client / Postman files | ⏳ Next |
-| 6 | Frontend: todo list page (MPA) | — |
+| 5 | Tests (Vitest + Supertest) + REST Client / Postman files | ✅ Done |
+| 6 | Frontend: todo list page (MPA) | ⏳ Next |
 | 7 | Frontend: single todo page (`?id=`) | — |
 | 8 | Documentation + final cleanup | — |
 
@@ -311,3 +311,57 @@ Full API reference: response format, todo object, every endpoint with params, ex
 - `npm run typecheck` and `npm run build` pass.
 - HTTP smoke test (throwaway, real tests in step 5) over a real port, 17 requests, all correct: `201` + `Location` on create, `400 VALIDATION_ERROR` with field details, `400 INVALID_JSON` for `{ bad json`, `404 NOT_FOUND`, `204` on delete then `404` on the second delete, `DELETE /completed` not captured by `/:id`, JSON `404 ROUTE_NOT_FOUND` for unknown URLs.
 - Booted the **built** server (`node dist/index.js`) with a temporary `DB_PATH`: health check OK, todo created, `todos.db` + WAL files created on disk, request log lines printed.
+
+---
+
+## Step 5: Tests + REST Client / Postman files
+
+**Goal:** prove every layer works and lock the behaviour in, so later changes can't silently break it. The assignment makes tests and Postman/REST Client files **mandatory for backend developers**.
+
+Full details: [TESTING.md](TESTING.md).
+
+### Files
+
+#### `server/vitest.config.ts`
+Tests live in `tests/**/*.test.ts`, run in the Node environment. Coverage via V8 (built into Node, no code instrumentation step), reporting `src/` only; `src/index.ts` is excluded because it only boots the real server (port, file DB, OS signals).
+
+#### `server/tests/helpers.ts`
+`createTestRepository()`, `createTestService()`, `createTestApp()`. **Each call creates a new `:memory:` database**, so every test starts empty. This is where the dependency injection from steps 1–4 pays off: the exact same code runs in tests, just with a different DB.
+
+#### `server/tests/unit/*.test.ts`
+- `todo.repository.test.ts`: the SQL layer against **real** SQLite (in memory). Covers sorting edge cases, `LIKE` escaping, `CHECK` constraints, AUTOINCREMENT, partial updates.
+  - **Fake timers** (`vi.setSystemTime`) prove `updatedAt` changes and `createdAt` doesn't, without real waiting.
+- `todo.schemas.test.ts`: validation rules, **table-driven** with `it.each` so every edge case is listed explicitly (`"0"`, `"-1"`, `"1.5"`, `"1e3"`, `"01"`, leap years…).
+- `todo.service.test.ts`: business rules: defaults, all errors at once, 400 vs 404, validation before the DB lookup, stats ignore the filter.
+
+#### `server/tests/api/*.test.ts`
+- `todos.api.test.ts`: every endpoint through HTTP with **Supertest** (calls the app in-process, no port): status codes, JSON bodies, `Location` header, empty `204` body, invalid JSON, `413`, unknown routes, and a **simulated crash** (closing the DB) to prove the `500` response leaks nothing.
+- `app-options.test.ts`: static frontend serving (API routes still take priority), the request logger, and the file DB (creates nested folders, data survives close/reopen).
+
+#### `server/requests.http`
+VS Code REST Client file: every endpoint plus every error case. `# @name createTodo` + `@todoId = {{createTodo.response.body.$.data.id}}` captures the created id so later requests reuse it.
+
+#### `server/postman/ziptrrip-todos.postman_collection.json`
+Postman v2.1 collection in three folders (Health, CRUD, Error cases). **Each request has test scripts** (`pm.test(...)`), and "Create a todo" stores the new id in the `todoId` collection variable. Requests are ordered so the Collection Runner can run the whole thing top to bottom.
+
+#### `docs/TESTING.md` (new)
+How to run the tests, the structure, what is covered, and how to use the REST Client and Postman files.
+
+#### Other changes
+- `package.json`: `test:coverage` script; `@vitest/coverage-v8` dev dependency.
+- `tsconfig.json`: includes `vitest.config.ts` so the config is type-checked too.
+- `.gitignore`: `coverage/` (generated report).
+
+### Testing decisions (likely interview questions)
+
+- **Unit vs integration:** unit tests check one layer (repository, schemas, service); API tests check that the layers fit together and that the HTTP contract is right. Both are needed: unit tests pinpoint *where* a bug is, API tests prove the *whole* thing works.
+- **Real in-memory SQLite instead of mocking the repository.** It's as fast as a mock and actually runs the SQL. A mock would just repeat my assumptions about what the SQL does. (Purists call these "sociable" unit tests.)
+- **No shared state:** a new DB in `beforeEach` means tests can run in any order, or alone, with the same result.
+- **Tests assert on behaviour, not implementation:** e.g. "search `50%` returns only the literal match", not "escapeLike was called".
+- **Coverage is a guide, not a goal:** ~97% here, but what matters is that the risky parts (validation, SQL building, error mapping) have explicit edge-case tests.
+
+### Verification
+- `npm run typecheck` passes.
+- `npm test`: **5 files, 99 tests, all passing** in ~1.3 s.
+- `npm run test:coverage`: **97.6% lines, 97.2% statements**.
+- Postman collection run with **newman** against the real built server: **19 requests, 39 assertions, 0 failures**.
