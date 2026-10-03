@@ -22,7 +22,8 @@ export default defineConfig({
       // MULTI-PAGE APP: every HTML file is its own entry point and becomes
       // its own page in dist/. Moving between pages is a full page load.
       input: {
-        list: page("index.html"),
+        list: page("index.html"), // page 1: todo list
+        todo: page("todo.html"), //  page 2: single todo (todo.html?id=<id>)
       },
     },
   },

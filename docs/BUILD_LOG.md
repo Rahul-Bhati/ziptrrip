@@ -10,8 +10,8 @@ A step-by-step record of how this project was built: **what** was done in each s
 | 4 | Routes, controllers, error middleware | ✅ Done |
 | 5 | Tests (Vitest + Supertest) + REST Client / Postman files | ✅ Done |
 | 6 | Frontend: todo list page (MPA) | ✅ Done |
-| 7 | Frontend: single todo page (`?id=`) | ⏳ Next |
-| 8 | Documentation + final cleanup | — |
+| 7 | Frontend: single todo page (`?id=`) | ✅ Done |
+| 8 | Documentation + final cleanup | ⏳ Next |
 
 ---
 
@@ -449,3 +449,56 @@ Plain CSS with custom properties; **dark mode follows the OS** (`prefers-color-s
 ### Verification
 - `npm run typecheck` (both configs), `npm test` (**17 tests**), `vite build` all pass.
 - Ran both dev servers and used the page in the browser: added todos (with priority / due date), inline-edited a title, toggled completed, filtered (Active), sorted (priority), searched ("milk"); URL updated to `?status=active&sort=priority-desc`, and **loading that URL fresh restored the same view**. Overdue date shown in red ("Overdue by 1 day"), completed item struck through, counts correct, no console errors. Server log shows each change followed by a list re-fetch.
+
+---
+
+## Step 7: Frontend, single todo page (`todo.html?id=<id>`)
+
+**Goal:** the assignment's second page: *"receive a query parameter of todo id and display the todo (plus any other information that you associate it with)"*.
+
+```
+list page                              todo page
+<a href="/todo.html?id=3">  ── full page load ──▶  todo.html → main.tsx → TodoPage
+                                                   readTodoId("?id=3") → 3
+                                                   GET /api/todos/3
+```
+
+### Files
+
+#### `client/todo.html` + `client/src/pages/todo/main.tsx`
+Second HTML page and its entry file (`mountPage(TodoPage)`). Registered as the second build input in `vite.config.ts`, so the build outputs `dist/todo.html` with its **own** JS bundle. The build output proves the MPA: `index.html` + `todo.html`, a `list-*.js` and a `todo-*.js` chunk, and one shared chunk (React + common code) that the browser caches across both pages.
+
+#### `client/src/lib/urls.ts`: the app's whole "routing"
+- `todoPageUrl(id)` → `/todo.html?id=3`; used by the list's links.
+- `readTodoId(query)`: accepts only positive integers (same rule as the server's `idSchema`), so `?id=abc` shows a message without making a request.
+- `listPageUrl(referrer, origin)`: the **"← All todos" link returns to the exact list URL the user came from** (with their filters/search/sort) if they came from the list page; otherwise (bookmark, shared link) it goes to `/`. Possible because step 6 stores list state in the URL.
+
+#### `client/src/lib/changes.ts`
+- `toDraft(todo)` converts a todo to form state (`dueDate: null` ↔ `""`, because inputs work with strings).
+- `getChanges(original, draft)` returns **only the changed fields**, the PATCH body. Smaller requests, and it doesn't overwrite fields changed elsewhere (e.g. completed in another tab). Whitespace-only edits count as no change; a cleared date becomes `dueDate: null`.
+
+#### `client/src/pages/todo/TodoPage.tsx`
+- **Page state as a discriminated union:** `invalid-id | loading | not-found | error | ready`. TypeScript forces every case to be handled, and impossible combinations (loading *and* showing a todo) can't be represented, unlike separate `isLoading` / `error` / `todo` variables.
+- `404` from the API → friendly "Todo #999 was not found. It may have been deleted."; other errors → banner with **Retry**.
+- Browser tab title becomes the todo's title.
+- After an update, the **PATCH response is used directly as the new state** (the server returns the full updated todo), so no second request. Contrast with the list page, which re-fetches because one change can affect order, filters and counts of *other* items.
+
+#### `client/src/pages/todo/TodoDetails.tsx`: "the todo plus any other information"
+Title, status badge, priority, due date with relative description ("Due tomorrow", "Overdue by 3 days"), full description (line breaks preserved via `white-space: pre-wrap`), and a details list: **ID, status, priority, due date, created and last-updated timestamps** (local date/time + relative "4 minutes ago" via `Intl.RelativeTimeFormat`). Actions: **Mark as completed / active**, **Edit**, **Delete** (confirm → `window.location.assign(backUrl)`, a full page load back to the list).
+
+#### `client/src/pages/todo/EditTodoForm.tsx`
+Edits every field: title, description (with character counter), priority, due date (clearable), completed.
+- Saves via PATCH with **only the changed fields**; saving with no changes just leaves edit mode.
+- **Server field errors are shown under the matching input** (the `details[].field` from the API's error format).
+- **Unsaved-changes guard:** while the form has changes, a `beforeunload` listener makes the browser ask "Leave site?" before reload, closing the tab, or clicking "← All todos". In an MPA every navigation is a full page load, so without this, edits would be silently lost.
+
+#### Tests: `urls.test.ts`, `changes.test.ts`
+Id parsing (valid / invalid / round-trip), back-link logic (same-origin list page vs anything else), change detection (no change, only changed fields, whitespace, cleared date ↔ `null`). Client total: **37 tests**.
+
+### Verification
+- Typecheck, **37 client tests**, and `vite build` pass; build outputs `dist/index.html` and `dist/todo.html`.
+- In the browser (dev servers):
+  - Clicked a todo in a filtered list → full page load to `todo.html?id=1`, tab title = todo title, all details shown; back link = `/?status=active&sort=priority-desc` (filters kept).
+  - Edit: added a two-line description and due date → saved, line breaks preserved, "Due tomorrow", "Last updated … (just now)".
+  - `?id=abc` and no id → "This link has no valid todo id"; `?id=999` → "Todo #999 was not found".
+  - Delete → redirected to the list, todo gone, counts updated.

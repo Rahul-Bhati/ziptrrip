@@ -43,7 +43,7 @@ A full-stack todo application built for the Ziptrrip tech assignment.
 | REST Client (`.http`) + Postman collection (with test assertions) | ✅ Done |
 | Todo list page: add, toggle, inline edit, delete, filter tabs with counts, search, sort, clear completed, filters kept in the URL | ✅ Done |
 | Overdue / due-soon highlighting, dark mode, keyboard + screen-reader friendly | ✅ Done |
-| Single todo page (`todo.html?id=<id>`) | ⏳ Planned (step 7) |
+| Single todo page (`todo.html?id=<id>`): all details + timestamps, complete, edit every field, delete, not-found / invalid-id states | ✅ Done |
 
 ## Tech stack
 
@@ -101,6 +101,7 @@ HTTP request → route → controller → service (validates) → repository (SQ
 ```
 client/                           # frontend (React + Vite, multi-page)
 ├── index.html                    # page 1: todo list
+├── todo.html                     # page 2: single todo (todo.html?id=<id>)
 ├── vite.config.ts                # MPA inputs + /api proxy to the server
 └── src/
     ├── types.ts                  # re-exports the server's Todo types
@@ -109,6 +110,7 @@ client/                           # frontend (React + Vite, multi-page)
     ├── hooks/                    # useDebouncedValue
     ├── components/               # PriorityBadge, DueDateLabel, ErrorBanner
     ├── pages/list/               # list page: ListPage, AddTodoForm, Toolbar, TodoItem, useTodoList
+    ├── pages/todo/               # todo page: TodoPage, TodoDetails, EditTodoForm
     └── styles.css
 ```
 
@@ -264,7 +266,7 @@ Table `todos` (SQLite):
 | Postman / REST Client files | `server/postman/`, `server/requests.http` | ✅ |
 | React app as an MPA | `client/` (one HTML file per page) | ✅ |
 | Todo list page | `client/index.html`, `client/src/pages/list/` | ✅ |
-| Single todo page with id query parameter | — | ⏳ Step 7 |
+| Single todo page with id query parameter | `client/todo.html`, `client/src/pages/todo/` | ✅ |
 | Features documented in `.md` files | `README.md`, `docs/` | 🚧 Updated every step |
 | Extra: TypeScript | Whole project | ✅ |
 | Extra: Database | SQLite | ✅ |

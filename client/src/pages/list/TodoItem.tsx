@@ -3,6 +3,7 @@ import { toApiError } from "../../api/client";
 import { deleteTodo, updateTodo } from "../../api/todos";
 import { DueDateLabel } from "../../components/DueDateLabel";
 import { PriorityBadge } from "../../components/PriorityBadge";
+import { todoPageUrl } from "../../lib/urls";
 import type { Todo } from "../../types";
 
 interface Props {
@@ -93,7 +94,7 @@ export function TodoItem({ todo, onChanged, onError }: Props) {
           </form>
         ) : (
           // A real link: opening a todo is a full page load of todo.html (MPA)
-          <a className="todo-title" href={`/todo.html?id=${todo.id}`}>
+          <a className="todo-title" href={todoPageUrl(todo.id)}>
             {todo.title}
           </a>
         )}
