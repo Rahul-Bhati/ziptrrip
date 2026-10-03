@@ -7,8 +7,8 @@ A step-by-step record of how this project was built: **what** was done in each s
 | 1 | Server project setup (package.json, TypeScript, app skeleton) | ✅ Done |
 | 2 | Database layer (SQLite connection, schema, repository) | ✅ Done |
 | 3 | Service layer + validation (Zod) | ✅ Done |
-| 4 | Routes, controllers, error middleware | ⏳ Next |
-| 5 | Tests (Vitest + Supertest) + REST Client / Postman files | — |
+| 4 | Routes, controllers, error middleware | ✅ Done |
+| 5 | Tests (Vitest + Supertest) + REST Client / Postman files | ⏳ Next |
 | 6 | Frontend: todo list page (MPA) | — |
 | 7 | Frontend: single todo page (`?id=`) | — |
 | 8 | Documentation + final cleanup | — |
@@ -245,3 +245,69 @@ Decisions:
   - `getById("abc")` → 400; `getById("99")` → 404.
   - `update("1", {})` → 400 "Provide at least one field to update".
   - `list({ sortBy: "hacker; DROP TABLE" })` → 400; `list({ status: ["active","completed"] })` → 400.
+
+---
+
+## Step 4: HTTP layer (routes, controllers, error middleware)
+
+**Goal:** expose the service over HTTP with correct status codes and **one consistent JSON shape** for success and errors.
+
+```
+request → express.json() → router → controller → service → repository → SQLite
+                                         │ throws AppError / body-parser error
+                                         ▼
+                                   errorHandler → { error: { code, message, details } }
+```
+
+### Files
+
+#### `server/src/config.ts`
+All settings in one object, read once from environment variables: `PORT` (3000), `DB_PATH` (`server/data/todos.db`), `CLIENT_DIST_PATH` (`client/dist`).
+- Paths are resolved **relative to the file** (`import.meta.url`), not the current folder. `npm run dev` runs `src/config.ts` and `npm start` runs `dist/config.js`. Both are one level below `server/`, so both resolve to the same `server/data/`, wherever the command is started from.
+- *Why not `dotenv`?* Three optional settings with sensible defaults don't justify a dependency. (Node 20+ also has `--env-file` built in if ever needed.)
+
+#### `server/src/controllers/todo.controller.ts`
+Thin translators: take `req.params` / `req.query` / `req.body` → call the service → choose the status code.
+- `201 Created` + **`Location: /api/todos/:id`** header on create (REST convention: tells the client where the new resource lives).
+- `204 No Content` on delete: success with an empty body.
+- **No try/catch:** better-sqlite3 is synchronous, so handlers are synchronous, and Express (both v4 and v5) forwards any error thrown in a handler to the error middleware. (Express 5 also does this for `async` handlers, which v4 did not.)
+- **Factory function instead of a class:** handlers are passed to the router as plain callbacks (`router.get("/", controller.list)`). Class methods would lose `this` when passed like that (a classic JS bug) unless each one is bound or written as an arrow property. Closures over `service` avoid the problem entirely.
+
+#### `server/src/routes/todo.routes.ts`
+URL → handler map, so this one file shows the whole API at a glance.
+- **Route order matters:** `DELETE /completed` is registered **before** `DELETE /:id`. Otherwise Express would match `"completed"` as an `:id` and the id validation would answer 400.
+- *Why `DELETE /api/todos/completed` and not `DELETE /api/todos?completed=true`?* An explicit sub-resource path is harder to trigger by accident than a query flag on a "delete collection" URL.
+
+#### `server/src/middleware/error-handler.ts`
+- **`errorHandler`**, the single place that turns errors into responses:
+  1. `AppError` → its own `statusCode`, `code`, `message`, `details`.
+  2. **Body-parser errors** (broken JSON → `400 INVALID_JSON`, body > 100kb → `413 PAYLOAD_TOO_LARGE`).
+  3. Anything else is a bug → logged with `console.error`, client gets a generic **`500 INTERNAL_ERROR`**. Stack traces or SQL are **never** sent to the client (information leak).
+  - Express identifies an error handler by its **4 parameters**, so `_next` stays even though it is unused.
+- **`notFoundHandler`**: any unmatched `/api/...` URL gets a JSON `404 ROUTE_NOT_FOUND` instead of Express's default HTML page, so API clients always receive JSON.
+
+#### `server/src/middleware/request-logger.ts`
+One line per request (`GET /api/todos 200 3.1ms`), written when the response *finishes* so the status code and duration are known. Off in tests to keep output clean. *Why not morgan/pino?* One tiny function covers local development; a real deployment would use structured logging (pino).
+
+#### `server/src/app.ts` (updated)
+`createApp(db, options)` is the **composition root**, the only place that creates and connects the layers: `db → TodoRepository → TodoService → controller → router`.
+- **The DB is a parameter:** tests call `createApp(createDatabase(":memory:"))`, the server passes the file DB.
+- **Middleware order:** logger → JSON parser → routes → `/api` 404 → static files (production frontend) → error handler **last**. Express runs middleware in registration order, and the error handler only catches errors from things registered before it.
+- `app.disable("x-powered-by")`: don't advertise the framework to attackers.
+- `staticDir`: in production the built frontend pages are served by the same server (step 8), so one process serves both the site and the API.
+
+#### `server/src/index.ts` (updated)
+Opens the file DB, builds the app, listens, and handles **graceful shutdown**: on `SIGINT` (Ctrl+C) / `SIGTERM` (`docker stop`, hosting platforms) it stops accepting connections, lets in-flight requests finish (`server.close`), then `db.close()` so SQLite folds its WAL file back into the main database file.
+
+#### `docs/API.md` (new)
+Full API reference: response format, todo object, every endpoint with params, examples, status codes, error codes and validation rules.
+
+### Response design decisions
+- **Envelope `{ data }` / `{ error }`:** a client can always check for `error` first. It also leaves room for extra top-level info, like `stats` next to the list.
+- **`stats` in the list response:** the list page header shows totals in the same request, without a second endpoint.
+- **PUT is not supported** (PATCH covers updates). It returns `404 ROUTE_NOT_FOUND`. Strictly, `405 Method Not Allowed` would be more precise; accepted as a simplification.
+
+### Verification
+- `npm run typecheck` and `npm run build` pass.
+- HTTP smoke test (throwaway, real tests in step 5) over a real port, 17 requests, all correct: `201` + `Location` on create, `400 VALIDATION_ERROR` with field details, `400 INVALID_JSON` for `{ bad json`, `404 NOT_FOUND`, `204` on delete then `404` on the second delete, `DELETE /completed` not captured by `/:id`, JSON `404 ROUTE_NOT_FOUND` for unknown URLs.
+- Booted the **built** server (`node dist/index.js`) with a temporary `DB_PATH`: health check OK, todo created, `todos.db` + WAL files created on disk, request log lines printed.
