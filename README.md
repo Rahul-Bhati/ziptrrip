@@ -5,7 +5,7 @@ A full-stack todo application built for the Ziptrrip tech assignment.
 - **Backend:** Node.js + Express 5 + TypeScript, REST CRUD API, SQLite database
 - **Frontend:** React + Vite as a **Multi-Page Application (MPA)**: a todo list page and a single-todo page (`todo.html?id=<id>`)
 
-> 🚧 **Status: in progress.** The server skeleton and database layer are done.
+> 🚧 **Status: in progress.** Server skeleton, database layer and service/validation layer are done.
 > See [docs/BUILD_LOG.md](docs/BUILD_LOG.md) for a step-by-step record of what was built and why.
 
 ---
@@ -35,7 +35,7 @@ A full-stack todo application built for the Ziptrrip tech assignment.
 | Sort by created date, due date, priority or title (asc / desc) | ✅ Done (database layer) |
 | Clear all completed todos | ✅ Done (database layer) |
 | Counts (total / active / completed) | ✅ Done (database layer) |
-| Request validation with clear error messages | ⏳ Planned (step 3) |
+| Request validation with clear, per-field error messages | ✅ Done (service layer) |
 | REST CRUD API | ⏳ Planned (step 4) |
 | Unit + API tests | ⏳ Planned (step 5) |
 | REST Client (`.http`) + Postman collection | ⏳ Planned (step 5) |
@@ -71,8 +71,14 @@ ziptrrip/
     └── src/
         ├── index.ts             # entry point: starts the HTTP server
         ├── app.ts               # createApp(): builds the Express app
+        ├── errors.ts            # AppError, NotFoundError (404), ValidationError (400)
         ├── types/
         │   └── todo.ts          # Todo type + allowed values (priorities, sort fields…)
+        ├── validation/
+        │   ├── todo.schemas.ts  # Zod schemas: id, create, update, list query
+        │   └── parse.ts         # parse(): validate or throw ValidationError
+        ├── services/
+        │   └── todo.service.ts  # business logic: validate → repository → errors
         ├── db/
         │   ├── schema.ts        # CREATE TABLE statement
         │   └── database.ts      # opens SQLite, applies schema
@@ -80,7 +86,7 @@ ziptrrip/
             └── todo.repository.ts   # all SQL queries live here
 ```
 
-Planned: `server/src/services`, `controllers`, `routes`, `middleware`, `server/tests`, and a `client/` folder for the frontend.
+Planned: `server/src/controllers`, `routes`, `middleware`, `server/tests`, and a `client/` folder for the frontend.
 
 ## Getting started
 
@@ -192,4 +198,4 @@ The todo CRUD endpoints (`GET/POST /api/todos`, `GET/PATCH/DELETE /api/todos/:id
 | Features documented in `.md` files | `README.md`, `docs/` | 🚧 Updated every step |
 | Extra: TypeScript | Whole project | ✅ |
 | Extra: Database | SQLite | ✅ |
-| Extra: Code organisation | Layered: types / db / repositories (more layers coming) | 🚧 |
+| Extra: Code organisation | Layered: types / validation / services / repositories / db (HTTP layer next) | 🚧 |

@@ -6,8 +6,8 @@ A step-by-step record of how this project was built: **what** was done in each s
 |---|---|---|
 | 1 | Server project setup (package.json, TypeScript, app skeleton) | ✅ Done |
 | 2 | Database layer (SQLite connection, schema, repository) | ✅ Done |
-| 3 | Service layer + validation (Zod) | ⏳ Next |
-| 4 | Routes, controllers, error middleware | — |
+| 3 | Service layer + validation (Zod) | ✅ Done |
+| 4 | Routes, controllers, error middleware | ⏳ Next |
 | 5 | Tests (Vitest + Supertest) + REST Client / Postman files | — |
 | 6 | Frontend: todo list page (MPA) | — |
 | 7 | Frontend: single todo page (`?id=`) | — |
@@ -177,3 +177,71 @@ The **only file that contains SQL**. A class that receives the DB in its constru
 ### Verification
 - `npm run typecheck` passes.
 - A throwaway script (not committed; real tests come in step 5) ran **21 checks against an in-memory DB, all passing**: create/find/update/delete, filters, case-insensitive search, `%` escaping, all sort orders including nulls-last, partial update clearing `dueDate`, stats, DB CHECKs rejecting `2026-02-30` and blank titles, and AUTOINCREMENT not reusing ids.
+
+---
+
+## Step 3: Service layer + validation
+
+**Goal:** a layer that **validates every input** and applies **business rules** (defaults, "not found"), while knowing nothing about HTTP.
+
+```
+controller (step 4) → TodoService → TodoRepository
+                      │ 1. parse(schema, raw input) → typed, cleaned data or ValidationError (400)
+                      │ 2. call repository
+                      └ 3. undefined from repository → NotFoundError (404)
+```
+
+### Files
+
+#### `server/src/errors.ts`
+- **`AppError`** (base): `message` + `statusCode` + `code` + optional `details`.
+- **`NotFoundError`** → 404, code `NOT_FOUND`.
+- **`ValidationError`** → 400, code `VALIDATION_ERROR`, `details` = list of `{ field?, message }`.
+- **Why custom error classes?** The service only says *what* went wrong; the error middleware (step 4) decides *how* to send it. The service never touches `res`, so it can be tested without HTTP.
+- **Why a `code` as well as a status?** Several different problems share status 400. A stable `code` lets a client branch on the error type without parsing English messages.
+- `this.name = new.target.name` makes logs show `NotFoundError` instead of a generic `Error`.
+
+#### `server/src/validation/todo.schemas.ts`
+A Zod schema **checks** input and **cleans** it in one step (trims strings, fills defaults, turns `"5"` into `5`).
+
+| Schema | Used for | Notable rules |
+|---|---|---|
+| `idSchema` | `:id` path param | Regex `^[1-9]\d*$` then `Number`. Rejects `abc`, `0`, `-1`, `1.5`, `1e3` |
+| `createTodoSchema` | POST body | `title` required, trimmed, 1–200 chars. **Defaults:** description `""`, priority `medium`, dueDate `null` |
+| `updateTodoSchema` | PATCH body | All fields optional, **no defaults**, at least one field required |
+| `listQuerySchema` | GET query string | `status`, `search`, `sortBy`, `order`, each with a default; empty search = no search |
+
+Decisions:
+- **Allowed values come from `types/todo.ts`** (`z.enum(PRIORITIES)`), so the TS type, the validator and the error message ("must be one of: low, medium, high") can never disagree.
+- **`z.strictObject` for bodies:** unknown fields (a typo like `titel`, or trying to send `id`/`createdAt`) are **rejected** with a clear message instead of silently ignored. Silent ignoring hides client bugs.
+- **Plain `z.object` for the query string:** unknown query params are ignored, because tools and browsers sometimes add their own (cache-busters).
+- **No defaults in the update schema:** a default there would overwrite existing values on every PATCH (e.g. reset priority to `medium` when you only toggle `completed`).
+- **`z.iso.date()`** validates format *and* calendar: `2026-02-30` fails, `2028-02-29` passes (leap year).
+- **Repeated query params** (`?status=a&status=b`) arrive as an array and are rejected with a 400, never crash the server.
+- **Dates are not restricted to the future:** recording an already-overdue task is a valid use case.
+
+#### `server/src/validation/parse.ts`
+`parse(schema, input, fieldName?)` runs `safeParse` and either returns typed data or throws one `ValidationError` with **all** issues. That way a form with 3 mistakes gets 3 messages in one response, not one per round-trip. `fieldName` labels single-value inputs (the `id` param), since they have no field path.
+
+#### `server/src/services/todo.service.ts`
+`list`, `getById`, `create`, `update`, `delete`, `clearCompleted`.
+- **Every method takes raw `unknown` input and validates it first.** The service is the single entry point into the domain: HTTP, a seed script or a test cannot skip validation.
+- **Order in `update`:** validate the id, then validate the body, *then* touch the DB. A bad request never costs a query.
+- **`list` returns `stats` for all todos** (not just filtered ones), so the list page can show "3 active · 2 completed" from a single request.
+- Converts the repository's `undefined`/`false` into `NotFoundError` with a helpful message ("Todo with id 99 not found").
+
+**Rejected alternatives**
+- *Validation as Express middleware (in routes):* works, but then any caller that isn't HTTP skips validation, and service tests would need HTTP.
+- *Validation in the controller:* same problem. Controllers stay as thin translators.
+- *Service returns `null` / error objects instead of throwing:* every caller would need `if (!result)` checks; forgetting one is a bug. Throwing + one central handler is harder to get wrong.
+- *Joi / class-validator / hand-written checks:* Zod gives TS types from the schema and has no decorators/classes to configure.
+
+### Verification
+- `npm run typecheck` passes.
+- Throwaway script, 19 scenarios, all as expected. Highlights:
+  - `create({ title: "  Buy milk  " })` → trimmed title, defaults applied.
+  - `create({ title: "", priority: "urgent", dueDate: "2026-02-30", extra: 1 })` → **4 issues in one error** (title empty, priority invalid, date invalid, unknown key `extra`).
+  - Body `[]` or missing → "Request body must be a JSON object".
+  - `getById("abc")` → 400; `getById("99")` → 404.
+  - `update("1", {})` → 400 "Provide at least one field to update".
+  - `list({ sortBy: "hacker; DROP TABLE" })` → 400; `list({ status: ["active","completed"] })` → 400.
