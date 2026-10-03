@@ -7,8 +7,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      // index.ts only boots the real server (port, file DB, signals); covered by manual run
-      exclude: ["src/index.ts"],
+      // Entry points that only boot things (real server / seed script); checked by running them
+      exclude: ["src/index.ts", "src/scripts/**"],
       reporter: ["text", "html"],
     },
   },

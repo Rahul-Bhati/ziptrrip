@@ -11,7 +11,7 @@ A step-by-step record of how this project was built: **what** was done in each s
 | 5 | Tests (Vitest + Supertest) + REST Client / Postman files | ✅ Done |
 | 6 | Frontend: todo list page (MPA) | ✅ Done |
 | 7 | Frontend: single todo page (`?id=`) | ✅ Done |
-| 8 | Documentation + final cleanup | ⏳ Next |
+| 8 | One-command setup, seed data, documentation, production check | ✅ Done |
 
 ---
 
@@ -502,3 +502,76 @@ Id parsing (valid / invalid / round-trip), back-link logic (same-origin list pag
   - Edit: added a two-line description and due date → saved, line breaks preserved, "Due tomorrow", "Last updated … (just now)".
   - `?id=abc` and no id → "This link has no valid todo id"; `?id=999` → "Todo #999 was not found".
   - Delete → redirected to the list, todo gone, counts updated.
+
+---
+
+## Step 8: One-command setup, seed data, documentation, production check
+
+**Goal:** make the project trivial to run for a reviewer, document every feature, and verify the production setup end to end.
+
+### Files
+
+#### `package.json` (root, new)
+Convenience scripts that run both apps:
+
+| Script | Runs |
+|---|---|
+| `postinstall` | `npm install` in `server/` and `client/`, so **one `npm install` at the root sets up everything** |
+| `dev` | `concurrently` runs the server and client dev servers in one terminal, with coloured `[server]` / `[client]` prefixes |
+| `build` / `start` / `test` / `typecheck` / `seed` | The same script in each app, via `npm --prefix` |
+
+*Why not npm workspaces?* Workspaces hoist both apps' dependencies into one root `node_modules` and one lockfile. Separate folders with their own lockfiles keep the two apps independent (each could be deployed on its own), and `--prefix` scripts give the same convenience.
+
+#### `server/src/scripts/seed.ts` + `npm run seed`
+Adds 8 sample todos covering every state (completed, overdue, due today, due soon, later, no date, with/without description). Due dates are **relative to today**, so the demo always shows those states. It goes through `TodoService`, so seed data is validated like API input. It only runs on an empty database (`-- --force` to override), so running it twice doesn't duplicate data. Excluded from coverage (like `index.ts`: it only boots things).
+
+#### `docs/FEATURES.md` (new)
+Every feature by area (list page, todo page, MPA, API, data/validation, reliability/security, developer experience), with screenshots. The assignment says undocumented features are not considered, so this is the complete list.
+
+#### `docs/screenshots/`
+`list-page.jpg`, `todo-page.jpg`, taken from the **production build** (served by Express) with the seeded data.
+
+#### `README.md` (rewritten)
+Quick start (5 commands), features summary, stack, full structure, dev vs production, configuration, scripts, API overview, data model, testing, docs index, and an **assignment checklist** mapping each requirement to where it is fulfilled.
+
+### How production works
+```
+npm run build   →  server/dist/*.js   +   client/dist/index.html, todo.html, assets/
+npm start       →  node server/dist/index.js
+                     ├─ /api/*            → Express routes
+                     └─ everything else   → express.static(client/dist)
+```
+One process, one port, one origin. The frontend's relative `/api` URLs work unchanged; in development the Vite proxy provides the same single-origin setup.
+
+### Verification (final)
+- From the root: `npm install` (installed root + server + client), `npm run typecheck` ✅, `npm test` → **99 server + 37 client = 136 tests passing** ✅, `npm run build` ✅ (server `dist/` + client `dist/index.html`, `dist/todo.html`).
+- `npm run seed` → "Added 8 sample todos"; second run → "nothing added".
+- `npm start` → in the browser: `http://localhost:3000/` shows the list with seeded data (overdue in red, due today/soon in orange); `http://localhost:3000/todo.html?id=6` shows the detail page; `/api/todos` answers from the same server.
+
+---
+
+## Summary of key decisions
+
+| Decision | Reason |
+|---|---|
+| Layered backend (routes → controllers → services → repositories) | Each layer has one job; SQL in one place; services testable without HTTP |
+| DB injected into `createApp(db)` | Tests use in-memory SQLite, the server uses a file |
+| Service validates raw input (Zod) | No caller can skip validation; all errors reported at once |
+| Custom error classes + one error middleware | Consistent `{ error: { code, message, details } }`; no internals leaked |
+| SQLite + raw SQL with bound parameters + allow-lists | Real database with zero setup; injection-safe; fully explainable |
+| PATCH (not PUT), `null` clears a due date | Send only what changed |
+| Vite multi-page build, plain `<a href>` links | A real MPA: one HTML file and one React app per page |
+| Dev proxy + Express static in production | One origin everywhere, so no CORS and the same `/api` URLs |
+| Frontend imports the server's types | API shape can't drift between frontend and backend |
+| List state in the URL; re-fetch after changes | MPA-friendly (survives page loads); never out of sync with the DB |
+| AbortController in data loading | No stale responses overwriting newer ones |
+| Due dates compared as calendar strings | No timezone off-by-one bugs |
+
+### What I would add next (not in scope)
+- **Authentication** and per-user todos (a `user_id` column + middleware).
+- **Pagination** for the list endpoint (`limit` / `cursor`) once lists grow large.
+- **Postgres** for multiple server instances: only the repository and `db/` change.
+- **Migrations** (e.g. `PRAGMA user_version` or a migration tool) instead of `CREATE TABLE IF NOT EXISTS`, once the schema evolves.
+- **Optimistic UI updates** with rollback, for a snappier feel.
+- **Component / end-to-end tests** (React Testing Library, Playwright) and a CI workflow running `npm test` on every push.
+- **Docker** image for one-command deployment.

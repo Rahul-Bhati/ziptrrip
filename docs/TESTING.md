@@ -30,6 +30,8 @@ No server or database setup is needed: every test creates its own **in-memory SQ
 
 Current result: **99 tests, all passing; ~97% line coverage.**
 
+The frontend has its own unit tests (37) for its pure logic: due-date maths, URL/id parsing, change detection and list options (`client/src/lib/*.test.ts`), run with `npm test` inside `client/`. From the **root**, `npm test` runs both suites (136 tests).
+
 ## Test structure
 
 ```
