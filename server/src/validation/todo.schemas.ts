@@ -40,6 +40,15 @@ const dueDateField = z.iso
 
 const completedField = z.boolean({ error: "completed must be true or false" });
 
+const ASSIGNEE_ID_MESSAGE = "assigneeId must be a positive integer, or null";
+
+/** A real person id, or null for Unassigned. Strings and booleans are rejected. */
+const assigneeIdField = z
+  .number({ error: ASSIGNEE_ID_MESSAGE })
+  .int(ASSIGNEE_ID_MESSAGE)
+  .positive(ASSIGNEE_ID_MESSAGE)
+  .nullable();
+
 /** Message for a body that is missing or not a JSON object (e.g. an array) */
 const bodyError = (issue: { code: string }) =>
   issue.code === "invalid_type" ? "Request body must be a JSON object" : undefined;
@@ -69,6 +78,7 @@ export const createTodoSchema = z.strictObject(
     description: descriptionField.default(""),
     priority: priorityField.default("medium"),
     dueDate: dueDateField.default(null),
+    assigneeId: assigneeIdField.default(null),
   },
   { error: bodyError },
 );
@@ -84,6 +94,7 @@ export const updateTodoSchema = z
       description: descriptionField,
       priority: priorityField,
       dueDate: dueDateField,
+      assigneeId: assigneeIdField,
       completed: completedField,
     },
     { error: bodyError },

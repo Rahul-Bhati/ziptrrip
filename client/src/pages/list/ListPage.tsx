@@ -23,7 +23,12 @@ export function ListPage() {
   const search = useDebouncedValue(params.search, 300);
   const { status, sortBy, order } = params;
 
-  const { data, error, loading, reload } = useTodoList({ status, search, sortBy, order });
+  const { data, error, loading, reload, people, peopleReady, peopleError } = useTodoList({
+    status,
+    search,
+    sortBy,
+    order,
+  });
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Mirror the filters into the URL (replaceState: no new history entry per keystroke)
@@ -60,7 +65,7 @@ export function ListPage() {
         )}
       </header>
 
-      <AddTodoForm onCreated={reload} />
+      <AddTodoForm people={people} peopleReady={peopleReady} peopleError={peopleError} onCreated={reload} />
 
       <Toolbar params={params} stats={stats} onChange={updateParams} />
 

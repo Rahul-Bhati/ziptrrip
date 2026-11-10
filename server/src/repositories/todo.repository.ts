@@ -19,6 +19,8 @@ interface TodoRow {
   completed: 0 | 1;
   priority: Priority;
   due_date: string | null;
+  assignee_person_id: number | null;
+  assignee_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -26,8 +28,25 @@ interface TodoRow {
 /** Named params object passed to better-sqlite3 (`@name` in the SQL) */
 type Params = Record<string, unknown>;
 
-/** Explicit column list instead of `SELECT *`: we only read what TodoRow describes. */
-const COLUMNS = "id, title, description, completed, priority, due_date, created_at, updated_at";
+/**
+ * Explicit column list instead of `SELECT *`.
+ * Aliased because the people join also has an `id`, and SQLite would
+ * otherwise hand back the person's id under the name `id`.
+ */
+const COLUMNS = `
+  todos.id AS id,
+  todos.title AS title,
+  todos.description AS description,
+  todos.completed AS completed,
+  todos.priority AS priority,
+  todos.due_date AS due_date,
+  todos.created_at AS created_at,
+  todos.updated_at AS updated_at,
+  people.id AS assignee_person_id,
+  people.name AS assignee_name
+`;
+
+const FROM_TODOS = "FROM todos LEFT JOIN people ON people.id = todos.assignee_id";
 
 /**
  * ORDER BY columns cannot be sent as `?` parameters (parameters are values,
@@ -35,11 +54,11 @@ const COLUMNS = "id, title, description, completed, priority, due_date, created_
  * That is what keeps sorting safe from SQL injection.
  */
 const SORT_COLUMNS: Record<SortField, string> = {
-  createdAt: "created_at",
-  dueDate: "due_date",
+  createdAt: "todos.created_at",
+  dueDate: "todos.due_date",
   // Text sorting would give high < low < medium, so map to numbers
-  priority: "CASE priority WHEN 'low' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END",
-  title: "title COLLATE NOCASE",
+  priority: "CASE todos.priority WHEN 'low' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END",
+  title: "todos.title COLLATE NOCASE",
 };
 
 /** Which API field updates which DB column (also acts as an allow-list). */
@@ -49,6 +68,7 @@ const UPDATABLE_COLUMNS = {
   completed: "completed",
   priority: "priority",
   dueDate: "due_date",
+  assigneeId: "assignee_id",
 } as const satisfies Record<keyof UpdateTodoData, string>;
 
 /** Converts a DB row into the API shape. */
@@ -60,6 +80,10 @@ function toTodo(row: TodoRow): Todo {
     completed: row.completed === 1,
     priority: row.priority,
     dueDate: row.due_date,
+    assignee:
+      row.assignee_person_id == null || row.assignee_name == null
+        ? null
+        : { id: row.assignee_person_id, name: row.assignee_name },
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -74,26 +98,26 @@ function escapeLike(text: string): string {
 }
 
 /**
- * Data access for todos. This is the ONLY place in the app that knows SQL.
+ * Data access for todos. SQL for todos lives here (people have their own repository).
  * Services above it work with plain `Todo` objects, so the database could be
  * swapped (e.g. for Postgres) by rewriting just this class.
  */
 export class TodoRepository {
   // Fixed queries are prepared once and reused: SQLite parses them a single time.
   private readonly findByIdStmt: Statement<[number], TodoRow>;
-  private readonly insertStmt: Statement<[Params], TodoRow>;
+  private readonly insertStmt: Statement<[Params], { id: number }>;
   private readonly deleteStmt: Statement<[number]>;
   private readonly deleteCompletedStmt: Statement<[]>;
   private readonly statsStmt: Statement<[], { total: number; completed: number }>;
 
   constructor(private readonly db: DB) {
-    this.findByIdStmt = db.prepare(`SELECT ${COLUMNS} FROM todos WHERE id = ?`);
+    this.findByIdStmt = db.prepare(`SELECT ${COLUMNS} ${FROM_TODOS} WHERE todos.id = ?`);
 
-    // RETURNING gives back the inserted row in the same query (no second SELECT)
+    // RETURNING id, then findById, so the assignee name comes from the join
     this.insertStmt = db.prepare(`
-      INSERT INTO todos (title, description, priority, due_date, created_at, updated_at)
-      VALUES (@title, @description, @priority, @dueDate, @now, @now)
-      RETURNING ${COLUMNS}
+      INSERT INTO todos (title, description, priority, due_date, assignee_id, created_at, updated_at)
+      VALUES (@title, @description, @priority, @dueDate, @assigneeId, @now, @now)
+      RETURNING id
     `);
 
     this.deleteStmt = db.prepare("DELETE FROM todos WHERE id = ?");
@@ -111,12 +135,14 @@ export class TodoRepository {
     const conditions: string[] = [];
     const params: Params = {};
 
-    if (status === "active") conditions.push("completed = 0");
-    if (status === "completed") conditions.push("completed = 1");
+    if (status === "active") conditions.push("todos.completed = 0");
+    if (status === "completed") conditions.push("todos.completed = 1");
 
     if (search) {
       // SQLite's LIKE is case-insensitive for English letters
-      conditions.push("(title LIKE @search ESCAPE '\\' OR description LIKE @search ESCAPE '\\')");
+      conditions.push(
+        "(todos.title LIKE @search ESCAPE '\\' OR todos.description LIKE @search ESCAPE '\\')",
+      );
       params.search = `%${escapeLike(search)}%`;
     }
 
@@ -126,9 +152,9 @@ export class TodoRepository {
     // NULLS LAST: todos without a due date go to the end in both directions.
     // `id` is a tie-breaker so equal values always come back in the same order.
     const sql = `
-      SELECT ${COLUMNS} FROM todos
+      SELECT ${COLUMNS} ${FROM_TODOS}
       ${where}
-      ORDER BY ${SORT_COLUMNS[sortBy]} ${direction} NULLS LAST, id ${direction}
+      ORDER BY ${SORT_COLUMNS[sortBy]} ${direction} NULLS LAST, todos.id ${direction}
     `;
 
     // Dynamic SQL, so it is prepared per call (it changes with the filters)
@@ -143,9 +169,10 @@ export class TodoRepository {
 
   create(data: CreateTodoData): Todo {
     const row = this.insertStmt.get({ ...data, now: new Date().toISOString() });
-    // RETURNING always yields the inserted row; this guard satisfies strict typing
     if (!row) throw new Error("Insert did not return a row");
-    return toTodo(row);
+    const todo = this.findById(row.id);
+    if (!todo) throw new Error("Insert did not return a row");
+    return todo;
   }
 
   /**
@@ -171,10 +198,10 @@ export class TodoRepository {
     const sql = `
       UPDATE todos SET ${assignments.join(", ")}, updated_at = @now
       WHERE id = @id
-      RETURNING ${COLUMNS}
+      RETURNING id
     `;
-    const row = this.db.prepare<[Params], TodoRow>(sql).get(params);
-    return row ? toTodo(row) : undefined;
+    const row = this.db.prepare<[Params], { id: number }>(sql).get(params);
+    return row ? this.findById(row.id) : undefined;
   }
 
   /** Returns true if a todo was deleted, false if the id did not exist. */

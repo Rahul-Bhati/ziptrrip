@@ -6,17 +6,20 @@ import { ErrorBanner } from "../../components/ErrorBanner";
 import { PriorityBadge } from "../../components/PriorityBadge";
 import { describeDue, formatDate, formatDateTime, timeAgo } from "../../lib/dates";
 import { PRIORITY_LABELS } from "../../lib/options";
-import type { Todo } from "../../types";
+import type { Person, Todo } from "../../types";
 import { EditTodoForm } from "./EditTodoForm";
 
 interface Props {
   todo: Todo;
+  people: Person[];
+  peopleReady: boolean;
+  peopleError: string | null;
   backUrl: string;
   onUpdated: (todo: Todo) => void;
 }
 
 /** Everything about one todo, with complete / edit / delete actions */
-export function TodoDetails({ todo, backUrl, onUpdated }: Props) {
+export function TodoDetails({ todo, people, peopleReady, peopleError, backUrl, onUpdated }: Props) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +53,9 @@ export function TodoDetails({ todo, backUrl, onUpdated }: Props) {
     return (
       <EditTodoForm
         todo={todo}
+        people={people}
+        peopleReady={peopleReady}
+        peopleError={peopleError}
         onSaved={(updated) => {
           onUpdated(updated);
           setEditing(false);
@@ -104,6 +110,9 @@ export function TodoDetails({ todo, backUrl, onUpdated }: Props) {
 
           <dt>Priority</dt>
           <dd>{PRIORITY_LABELS[todo.priority]}</dd>
+
+          <dt>Assignee</dt>
+          <dd>{todo.assignee ? todo.assignee.name : "Unassigned"}</dd>
 
           <dt>Due date</dt>
           <dd>

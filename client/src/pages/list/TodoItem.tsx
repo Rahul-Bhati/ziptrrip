@@ -103,6 +103,7 @@ export function TodoItem({ todo, onChanged, onError }: Props) {
 
         <div className="todo-meta">
           <PriorityBadge priority={todo.priority} />
+          {todo.assignee ? <span>{todo.assignee.name}</span> : <span className="muted">Unassigned</span>}
           {todo.dueDate && <DueDateLabel dueDate={todo.dueDate} completed={todo.completed} />}
         </div>
       </div>

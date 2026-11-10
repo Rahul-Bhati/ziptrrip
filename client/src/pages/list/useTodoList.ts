@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { type ApiError, isAbortError, toApiError } from "../../api/client";
+import { listPeople } from "../../api/people";
 import { type ListParams, type TodoList, listTodos } from "../../api/todos";
+import type { Person } from "../../types";
 
 interface State {
   data: TodoList | null;
@@ -20,6 +22,9 @@ interface State {
  */
 export function useTodoList({ status, search, sortBy, order }: ListParams) {
   const [state, setState] = useState<State>({ data: null, error: null, loading: true });
+  const [people, setPeople] = useState<Person[]>([]);
+  const [peopleReady, setPeopleReady] = useState(false);
+  const [peopleError, setPeopleError] = useState<string | null>(null);
   const [reloadCount, setReloadCount] = useState(0);
 
   useEffect(() => {
@@ -36,8 +41,27 @@ export function useTodoList({ status, search, sortBy, order }: ListParams) {
     return () => controller.abort();
   }, [status, search, sortBy, order, reloadCount]);
 
+  // People change rarely. Reload them with the list so a failed load can be retried.
+  useEffect(() => {
+    const controller = new AbortController();
+
+    listPeople(controller.signal)
+      .then((list) => {
+        setPeople(list);
+        setPeopleError(null);
+        setPeopleReady(true);
+      })
+      .catch((error: unknown) => {
+        if (isAbortError(error)) return;
+        setPeopleError(toApiError(error).userMessage);
+        setPeopleReady(true);
+      });
+
+    return () => controller.abort();
+  }, [reloadCount]);
+
   // useCallback: a stable function, safe to pass to child components
   const reload = useCallback(() => setReloadCount((count) => count + 1), []);
 
-  return { ...state, reload };
+  return { ...state, reload, people, peopleReady, peopleError };
 }

@@ -6,6 +6,8 @@
  * builds its runtime validators from the very same arrays.
  */
 
+import type { Person } from "./person.js";
+
 export const PRIORITIES = ["low", "medium", "high"] as const;
 export type Priority = (typeof PRIORITIES)[number]; // "low" | "medium" | "high"
 
@@ -27,6 +29,8 @@ export interface Todo {
   priority: Priority;
   /** Calendar date "YYYY-MM-DD", or null when there is no due date */
   dueDate: string | null;
+  /** The person this todo is assigned to, or null when it is unassigned */
+  assignee: Person | null;
   /** ISO 8601 timestamps, e.g. "2026-10-03T08:15:30.123Z" */
   createdAt: string;
   updatedAt: string;
@@ -42,11 +46,14 @@ export interface CreateTodoData {
   description: string;
   priority: Priority;
   dueDate: string | null;
+  /** null means unassigned. The validation layer fills this default. */
+  assigneeId: number | null;
 }
 
 /**
  * Partial update. A field that is `undefined` (not sent) is left unchanged.
  * For dueDate, `null` is different from `undefined`: it means "remove the due date".
+ * For assigneeId, `null` means "clear the assignee".
  */
 export type UpdateTodoData = Partial<CreateTodoData & { completed: boolean }>;
 

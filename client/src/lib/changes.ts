@@ -6,6 +6,8 @@ export interface TodoDraft {
   description: string;
   priority: Priority;
   dueDate: string;
+  /** Person id, or "" when the select is on Unassigned */
+  assigneeId: number | "";
   completed: boolean;
 }
 
@@ -15,6 +17,7 @@ export function toDraft(todo: Todo): TodoDraft {
     description: todo.description,
     priority: todo.priority,
     dueDate: todo.dueDate ?? "",
+    assigneeId: todo.assignee?.id ?? "",
     completed: todo.completed,
   };
 }
@@ -40,6 +43,10 @@ export function getChanges(original: Todo, draft: TodoDraft): TodoChanges {
 
   const dueDate = draft.dueDate || null; // empty date input = remove the due date
   if (dueDate !== original.dueDate) changes.dueDate = dueDate;
+
+  const assigneeId = draft.assigneeId === "" ? null : draft.assigneeId;
+  const originalAssigneeId = original.assignee?.id ?? null;
+  if (assigneeId !== originalAssigneeId) changes.assigneeId = assigneeId;
 
   if (draft.completed !== original.completed) changes.completed = draft.completed;
 

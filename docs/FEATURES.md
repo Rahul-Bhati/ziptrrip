@@ -20,7 +20,7 @@ Every feature of the application, by area. (The assignment states that undocumen
 
 | Feature | Details |
 |---|---|
-| **Add a todo** | Title (required, max 200 chars), priority (low / medium / high, default medium), optional due date, optional description (revealed with "+ Add description"). Press Enter or click Add. Focus returns to the title box for quick entry. |
+| **Add a todo** | Title (required, max 200 chars), priority (low / medium / high, default medium), optional due date, optional assignee (a dropdown of people, default Unassigned), optional description (revealed with "+ Add description"). Press Enter or click Add. Focus returns to the title box for quick entry. The assignee dropdown resets to Unassigned after a successful add. |
 | **Mark completed / active** | Checkbox on each row. Completed todos are struck through. |
 | **Inline title edit** | ✎ button → edit in place. Enter or Save to save, Escape or Cancel to cancel. |
 | **Delete** | 🗑 button with a confirmation dialog. |
@@ -31,6 +31,7 @@ Every feature of the application, by area. (The assignment states that undocumen
 | **Counts** | Header shows "X active · Y completed" for all todos, regardless of the current filter. |
 | **Filters kept in the URL** | e.g. `/?status=active&search=milk&sort=priority-desc`. Reload, the back button, and shared links restore the same view. Invalid values in the URL fall back to defaults. |
 | **Due date status** | Each due date shows a relative description: "Overdue by 2 days" (red), "Due today" / "Due tomorrow" / "Due in 2 days" (orange), "Due in 7 days". Completed todos are never shown as overdue. |
+| **Assignee** | Each row shows the person's name, or the muted word Unassigned. The row does not edit it. |
 | **Description preview** | First line of the description under the title (full text on the todo page). |
 | **Link to details** | Each title is a link to its own page: `todo.html?id=<id>`. |
 | **States** | Loading message; error banner with **Retry**; dismissible banner for failed actions; empty states ("Nothing to do yet" / "No todos match your filters" + **Clear filters**). |
@@ -43,9 +44,9 @@ Every feature of the application, by area. (The assignment states that undocumen
 | Feature | Details |
 |---|---|
 | **Todo id from the query parameter** | `todo.html?id=6` loads todo 6, as the assignment requires. |
-| **All information about the todo** | Title, status badge (Active / Completed), priority, due date with relative description, full description (line breaks kept), ID, created and last-updated timestamps (local date and time + relative, e.g. "4 minutes ago"). |
+| **All information about the todo** | Title, status badge (Active / Completed), priority, assignee (name or Unassigned), due date with relative description, full description (line breaks kept), ID, created and last-updated timestamps (local date and time + relative, e.g. "4 minutes ago"). |
 | **Mark as completed / active** | One button; the page updates immediately from the server's response. |
-| **Edit every field** | Title, description (with character counter), priority, due date (clear it to remove), completed. Only changed fields are sent. Saving with no changes just closes the form. |
+| **Edit every field** | Title, description (with character counter), priority, assignee (change the person, or choose Unassigned to clear it), due date (clear it to remove), completed. Only changed fields are sent. Saving with no changes just closes the form. |
 | **Server validation messages** | Errors returned by the API appear under the matching field. |
 | **Unsaved changes warning** | Leaving the page (link, reload, closing the tab) with unsaved edits triggers the browser's "Leave site?" confirmation. |
 | **Delete** | With confirmation, then returns to the list. |
@@ -66,6 +67,7 @@ Full reference: [API.md](API.md).
 | Feature | Details |
 |---|---|
 | CRUD endpoints | `GET /api/todos`, `GET /api/todos/:id`, `POST /api/todos`, `PATCH /api/todos/:id`, `DELETE /api/todos/:id` |
+| People | `GET /api/people`, `POST /api/people`. Names are unique ignoring case. No update or delete in this version. |
 | Bulk delete | `DELETE /api/todos/completed` returns how many were deleted |
 | Filter, search, sort | `status`, `search`, `sortBy`, `order` query parameters on the list endpoint |
 | Counts | `stats` (total / active / completed) returned with every list |
@@ -80,8 +82,8 @@ Full reference: [API.md](API.md).
 |---|---|
 | SQLite database | Single file `server/data/todos.db`, created automatically. Data survives restarts. |
 | Validation (Zod) | Every input checked: id, body fields, query parameters. **All problems reported at once**, each with its field name. |
-| Rules | Title 1–200 chars (trimmed); description ≤ 2000 chars; priority low/medium/high; due date a real calendar date `YYYY-MM-DD` (leap years checked) or null; `completed` a real boolean; unknown fields rejected. |
-| Defaults | New todos: priority medium, empty description, no due date, not completed. |
+| Rules | Title 1–200 chars (trimmed); description ≤ 2000 chars; priority low/medium/high; due date a real calendar date `YYYY-MM-DD` (leap years checked) or null; assignee id a positive integer of an existing person, or null; `completed` a real boolean; unknown fields rejected. |
+| Defaults | New todos: priority medium, empty description, no due date, unassigned, not completed. |
 | Database constraints | Second line of defense: `CHECK` constraints for non-blank title, valid priority, valid date, 0/1 completed. |
 | Stable ids | Ids of deleted todos are never reused, so an old link never shows a different todo. |
 | Timestamps | `createdAt` set once; `updatedAt` refreshed on every change (ISO 8601, UTC). |

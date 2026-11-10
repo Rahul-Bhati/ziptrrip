@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TodoRepository } from "../../src/repositories/todo.repository.js";
+import { createDatabase } from "../../src/db/database.js";
+import { PersonRepository } from "../../src/repositories/person.repository.js";
+import { TodoRepository } from "../../src/repositories/todo.repository.js";
 import type { CreateTodoData } from "../../src/types/todo.js";
 import { createTestRepository } from "../helpers.js";
 
@@ -9,6 +11,7 @@ const todo = (overrides: Partial<CreateTodoData> = {}): CreateTodoData => ({
   description: "",
   priority: "medium",
   dueDate: null,
+  assigneeId: null,
   ...overrides,
 });
 
@@ -30,6 +33,7 @@ describe("TodoRepository", () => {
         completed: false, // boolean, not 0
         priority: "high",
         dueDate: "2026-10-10",
+        assignee: null,
       });
       expect(created.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
       expect(created.updatedAt).toBe(created.createdAt);
@@ -165,6 +169,22 @@ describe("TodoRepository", () => {
 
     it("returns undefined when the todo does not exist", () => {
       expect(repo.update(999, { title: "x" })).toBeUndefined();
+    });
+
+    it("stores an assignee, replaces them, and clears them with null", () => {
+      const db = createDatabase(":memory:");
+      const people = new PersonRepository(db);
+      const todos = new TodoRepository(db);
+      const priya = people.create({ name: "Priya" });
+      const sam = people.create({ name: "Sam" });
+
+      const created = todos.create(todo({ assigneeId: priya.id }));
+      expect(created.assignee).toEqual({ id: priya.id, name: "Priya" });
+
+      expect(todos.update(created.id, { assigneeId: sam.id })?.assignee).toEqual({ id: sam.id, name: "Sam" });
+      expect(todos.update(created.id, { title: "Renamed" })?.assignee).toEqual({ id: sam.id, name: "Sam" });
+      expect(todos.update(created.id, { assigneeId: null })?.assignee).toBeNull();
+      db.close();
     });
   });
 

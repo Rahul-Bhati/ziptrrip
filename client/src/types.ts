@@ -7,6 +7,9 @@
  * Types are erased at build time, so no server code ends up in the browser bundle.
  */
 export type {
+  Person,
+} from "../../server/src/types/person";
+export type {
   Priority,
   SortField,
   SortOrder,
@@ -23,7 +26,14 @@ export interface NewTodo {
   description?: string;
   priority?: Priority;
   dueDate?: string | null;
+  /** null, or omitted, means Unassigned */
+  assigneeId?: number | null;
 }
 
-/** Body for PATCH /api/todos/:id: any subset of the editable fields */
-export type TodoChanges = Partial<Pick<Todo, "title" | "description" | "priority" | "dueDate" | "completed">>;
+/**
+ * Body for PATCH /api/todos/:id: any subset of the editable fields.
+ * assigneeId is not on Todo (the response uses `assignee`), so it is added here.
+ */
+export type TodoChanges = Partial<Pick<Todo, "title" | "description" | "priority" | "dueDate" | "completed">> & {
+  assigneeId?: number | null;
+};

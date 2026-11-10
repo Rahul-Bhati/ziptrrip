@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { type ApiError, isAbortError, toApiError } from "../../api/client";
 import { getTodo } from "../../api/todos";
+import { listPeople } from "../../api/people";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { listPageUrl, readTodoId } from "../../lib/urls";
-import type { Todo } from "../../types";
+import type { Person, Todo } from "../../types";
 import { TodoDetails } from "./TodoDetails";
 
 /**
@@ -30,6 +31,9 @@ export function TodoPage() {
   const [backUrl] = useState(() => listPageUrl(document.referrer, window.location.origin));
   const [state, setState] = useState<PageState>(id === null ? { kind: "invalid-id" } : { kind: "loading" });
   const [reloadCount, setReloadCount] = useState(0);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [peopleReady, setPeopleReady] = useState(false);
+  const [peopleError, setPeopleError] = useState<string | null>(null);
 
   useEffect(() => {
     if (id === null) return;
@@ -45,6 +49,22 @@ export function TodoPage() {
 
     return () => controller.abort();
   }, [id, reloadCount]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    listPeople(controller.signal)
+      .then((list) => {
+        setPeople(list);
+        setPeopleError(null);
+        setPeopleReady(true);
+      })
+      .catch((error: unknown) => {
+        if (isAbortError(error)) return;
+        setPeopleError(toApiError(error).userMessage);
+        setPeopleReady(true);
+      });
+    return () => controller.abort();
+  }, []);
 
   // Browser tab title follows the todo
   useEffect(() => {
@@ -93,6 +113,9 @@ export function TodoPage() {
       {state.kind === "ready" && (
         <TodoDetails
           todo={state.todo}
+          people={people}
+          peopleReady={peopleReady}
+          peopleError={peopleError}
           backUrl={backUrl}
           // The PATCH response IS the new todo: no need to fetch it again
           onUpdated={(todo) => setState({ kind: "ready", todo })}

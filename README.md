@@ -48,7 +48,7 @@ Open **http://localhost:5173**.
 
 | Area | Features |
 |---|---|
-| **List page** | Add (title, priority, due date, description) · mark completed · inline title edit · delete · filter tabs with counts (All / Active / Completed) · debounced search in title + description · sort (newest, oldest, due date, priority, title) · clear completed · filters kept in the URL · overdue / due-soon highlighting · loading, error and empty states |
+| **List page** | Add (title, priority, due date, optional assignee, description) · mark completed · inline title edit · delete · filter tabs with counts (All / Active / Completed) · debounced search in title + description · sort (newest, oldest, due date, priority, title) · clear completed · filters kept in the URL · overdue / due-soon highlighting · loading, error and empty states |
 | **Todo page** | Opened with `todo.html?id=<id>` · all details incl. ID, created/updated timestamps and relative times · mark completed/active · edit every field (only changed fields sent) · server field errors under inputs · unsaved-changes warning · delete · back link keeps list filters · invalid/unknown id messages |
 | **API** | CRUD + clear completed · filter/search/sort query params · counts with every list · partial updates (PATCH) · consistent JSON success/error format · correct status codes |
 | **Quality** | Validation with all errors at once · DB constraints as a second line of defense · SQL-injection-safe queries · no internal details leaked on errors · graceful shutdown · race-safe data loading · timezone-safe due dates · dark mode · keyboard and screen-reader friendly |
@@ -199,6 +199,8 @@ Inside `server/`: also `npm run test:watch` and `npm run test:coverage`. Inside 
 | `PATCH` | `/api/todos/:id` | Update some fields | `200` |
 | `DELETE` | `/api/todos/:id` | Delete a todo | `204` |
 | `DELETE` | `/api/todos/completed` | Delete all completed todos | `200` |
+| `GET` | `/api/people` | List people for the assignee dropdown | `200` |
+| `POST` | `/api/people` | Create a person | `201` |
 
 ```bash
 curl -X POST http://localhost:3000/api/todos -H "Content-Type: application/json" -d "{\"title\":\"Buy milk\",\"priority\":\"high\",\"dueDate\":\"2026-10-10\"}"
@@ -220,8 +222,11 @@ Table `todos` (SQLite):
 | `completed` | `completed` | boolean (stored as 0/1) | Defaults to `false` |
 | `priority` | `priority` | `"low"` \| `"medium"` \| `"high"` | Defaults to `"medium"` |
 | `dueDate` | `due_date` | `"YYYY-MM-DD"` or `null` | Must be a real calendar date |
+| `assignee` | `assignee_id` | person `{ id, name }` or `null` | Optional. `null` means unassigned. The response embeds the person; create and update send `assigneeId` |
 | `createdAt` | `created_at` | ISO 8601 timestamp | Set on create |
 | `updatedAt` | `updated_at` | ISO 8601 timestamp | Updated on every change |
+
+Table `people` (SQLite): `id` (auto-increment, never reused) and `name` (1–100 characters, unique ignoring case). There is no login. A person is only a name a todo can point at.
 
 ## Testing
 

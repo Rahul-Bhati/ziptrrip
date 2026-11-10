@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { NotFoundError, ValidationError } from "../../src/errors.js";
 import type { TodoService } from "../../src/services/todo.service.js";
-import { createTestService } from "../helpers.js";
+import { createTestBundle, createTestService } from "../helpers.js";
 
 /** Runs fn, expects it to throw, and returns the error for detailed checks */
 function catchError(fn: () => unknown): unknown {
@@ -128,6 +128,32 @@ describe("TodoService", () => {
 
       expect(service.clearCompleted()).toEqual({ deleted: 1 });
       expect(service.clearCompleted()).toEqual({ deleted: 0 });
+    });
+  });
+
+  describe("assignee", () => {
+    it("rejects an assignee id that is not a person", () => {
+      const error = catchError(() => service.create({ title: "Buy milk", assigneeId: 5 }));
+
+      expect(error).toBeInstanceOf(ValidationError);
+      expect((error as ValidationError).details).toEqual([
+        { field: "assigneeId", message: "assigneeId must be the id of an existing person, or null" },
+      ]);
+    });
+
+    it("saves a real person and can clear them", () => {
+      const { people, todos } = createTestBundle();
+      const priya = people.create({ name: "Priya" });
+
+      const created = todos.create({ title: "Buy milk", assigneeId: priya.id });
+      expect(created.assignee).toEqual({ id: priya.id, name: "Priya" });
+
+      const cleared = todos.update(String(created.id), { assigneeId: null });
+      expect(cleared.assignee).toBeNull();
+
+      const kept = todos.update(String(created.id), { title: "Buy oat milk" });
+      expect(kept.assignee).toBeNull();
+      expect(kept.title).toBe("Buy oat milk");
     });
   });
 });

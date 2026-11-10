@@ -1,4 +1,5 @@
-import { NotFoundError } from "../errors.js";
+import { NotFoundError, ValidationError } from "../errors.js";
+import type { PersonRepository } from "../repositories/person.repository.js";
 import type { TodoRepository } from "../repositories/todo.repository.js";
 import type { Todo, TodoStats } from "../types/todo.js";
 import { parse } from "../validation/parse.js";
@@ -26,7 +27,10 @@ export interface TodoListResult {
  * data or throws an AppError; the HTTP layer translates that into a response.
  */
 export class TodoService {
-  constructor(private readonly repository: TodoRepository) {}
+  constructor(
+    private readonly repository: TodoRepository,
+    private readonly people: PersonRepository,
+  ) {}
 
   list(rawQuery: unknown): TodoListResult {
     const filters = parse(listQuerySchema, rawQuery);
@@ -45,6 +49,7 @@ export class TodoService {
 
   create(rawBody: unknown): Todo {
     const data = parse(createTodoSchema, rawBody);
+    this.assertAssignee(data.assigneeId);
     return this.repository.create(data);
   }
 
@@ -52,6 +57,7 @@ export class TodoService {
     // Validate everything before touching the database
     const id = parse(idSchema, rawId, "id");
     const changes = parse(updateTodoSchema, rawBody);
+    this.assertAssignee(changes.assigneeId);
 
     const todo = this.repository.update(id, changes);
     if (!todo) throw this.notFound(id);
@@ -70,5 +76,15 @@ export class TodoService {
 
   private notFound(id: number): NotFoundError {
     return new NotFoundError(`Todo with id ${id} not found`);
+  }
+
+  /** null and undefined are allowed. A number must be an existing person. */
+  private assertAssignee(assigneeId: number | null | undefined): void {
+    if (assigneeId == null) return;
+    if (!this.people.findById(assigneeId)) {
+      throw new ValidationError([
+        { field: "assigneeId", message: "assigneeId must be the id of an existing person, or null" },
+      ]);
+    }
   }
 }

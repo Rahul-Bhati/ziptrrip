@@ -1,6 +1,8 @@
 import { createApp } from "../src/app.js";
 import { createDatabase } from "../src/db/database.js";
+import { PersonRepository } from "../src/repositories/person.repository.js";
 import { TodoRepository } from "../src/repositories/todo.repository.js";
+import { PersonService } from "../src/services/person.service.js";
 import { TodoService } from "../src/services/todo.service.js";
 
 /*
@@ -12,8 +14,19 @@ export function createTestRepository() {
   return new TodoRepository(createDatabase(":memory:"));
 }
 
+/** Todo service plus the people service, sharing one in-memory database. */
+export function createTestBundle() {
+  const db = createDatabase(":memory:");
+  const peopleRepository = new PersonRepository(db);
+  return {
+    db,
+    people: new PersonService(peopleRepository),
+    todos: new TodoService(new TodoRepository(db), peopleRepository),
+  };
+}
+
 export function createTestService() {
-  return new TodoService(createTestRepository());
+  return createTestBundle().todos;
 }
 
 export function createTestApp() {

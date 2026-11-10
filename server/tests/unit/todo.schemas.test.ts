@@ -28,6 +28,7 @@ describe("createTodoSchema", () => {
       description: "",
       priority: "medium",
       dueDate: null,
+      assigneeId: null,
     });
   });
 
@@ -54,6 +55,9 @@ describe("createTodoSchema", () => {
     ["unknown priority", { title: "x", priority: "urgent" }],
     ["client-controlled field", { title: "x", completed: true }],
     ["unknown field", { title: "x", titel: "typo" }],
+    ["string assignee id", { title: "x", assigneeId: "1" }],
+    ["zero assignee id", { title: "x", assigneeId: 0 }],
+    ["fractional assignee id", { title: "x", assigneeId: 1.5 }],
   ])("rejects %s", (_label, body) => {
     expect(createTodoSchema.safeParse(body).success).toBe(false);
   });
@@ -66,6 +70,10 @@ describe("updateTodoSchema", () => {
 
   it("allows null dueDate to clear the date", () => {
     expect(updateTodoSchema.parse({ dueDate: null })).toEqual({ dueDate: null });
+  });
+
+  it("allows null assigneeId to clear the assignee", () => {
+    expect(updateTodoSchema.parse({ assigneeId: null })).toEqual({ assigneeId: null });
   });
 
   it("rejects an empty object", () => {

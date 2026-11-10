@@ -194,6 +194,44 @@ describe("Todos API", () => {
     });
   });
 
+  describe("assignee", () => {
+    async function createPerson(name: string) {
+      const res = await request(app).post("/api/people").send({ name }).expect(201);
+      return res.body.data as { id: number; name: string };
+    }
+
+    it("stores null when assigneeId is omitted or null", async () => {
+      const omitted = await createTodo({ title: "No owner" });
+      expect(omitted.assignee).toBeNull();
+
+      const explicit = await createTodo({ title: "Still no owner", assigneeId: null });
+      expect(explicit.assignee).toBeNull();
+    });
+
+    it("returns the person, and rejects an id that does not exist", async () => {
+      const priya = await createPerson("Priya");
+      const created = await createTodo({ title: "Buy milk", assigneeId: priya.id });
+      expect(created.assignee).toEqual({ id: priya.id, name: "Priya" });
+
+      const res = await request(app).post("/api/todos").send({ title: "Ghost", assigneeId: 999 }).expect(400);
+      expect(res.body.error.details).toEqual([
+        { field: "assigneeId", message: "assigneeId must be the id of an existing person, or null" },
+      ]);
+    });
+
+    it("clears the assignee with null and keeps it when the field is omitted", async () => {
+      const priya = await createPerson("Priya");
+      const created = await createTodo({ title: "Buy milk", assigneeId: priya.id });
+
+      const renamed = await request(app).patch(`/api/todos/${created.id}`).send({ title: "Buy oat milk" }).expect(200);
+      expect(renamed.body.data.assignee).toEqual({ id: priya.id, name: "Priya" });
+
+      const cleared = await request(app).patch(`/api/todos/${created.id}`).send({ assigneeId: null }).expect(200);
+      expect(cleared.body.data.assignee).toBeNull();
+      expect(cleared.body.data.title).toBe("Buy oat milk");
+    });
+  });
+
   describe("unknown routes and unexpected errors", () => {
     it("returns a JSON 404 for an unknown /api route or method", async () => {
       const res = await request(app).get("/api/nope").expect(404);

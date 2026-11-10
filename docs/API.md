@@ -53,6 +53,7 @@ One shape for success and one for errors means a client needs only one piece of 
 | `completed` | boolean | `false` when created |
 | `priority` | `"low"` \| `"medium"` \| `"high"` | `"medium"` if not set |
 | `dueDate` | string \| null | Calendar date `YYYY-MM-DD`, or `null` for no due date |
+| `assignee` | `{ id, name }` \| null | The person this todo is assigned to, or `null` when unassigned |
 | `createdAt` | string | ISO 8601 UTC timestamp, set on create |
 | `updatedAt` | string | ISO 8601 UTC timestamp, updated on every change |
 
@@ -64,6 +65,7 @@ One shape for success and one for errors means a client needs only one piece of 
   "completed": false,
   "priority": "high",
   "dueDate": "2026-10-10",
+  "assignee": null,
   "createdAt": "2026-10-03T08:23:28.207Z",
   "updatedAt": "2026-10-03T08:23:28.207Z"
 }
@@ -82,6 +84,8 @@ One shape for success and one for errors means a client needs only one piece of 
 | `PATCH` | `/api/todos/:id` | Update some fields of a todo | `200` |
 | `DELETE` | `/api/todos/:id` | Delete a todo | `204` |
 | `DELETE` | `/api/todos/completed` | Delete all completed todos | `200` |
+| `GET` | `/api/people` | List people | `200` |
+| `POST` | `/api/people` | Create a person | `201` |
 
 ### Health check
 
@@ -121,6 +125,7 @@ Example: `GET /api/todos?status=active&sortBy=priority&order=desc&search=milk`
       "completed": false,
       "priority": "high",
       "dueDate": "2026-10-10",
+      "assignee": null,
       "createdAt": "2026-10-03T08:23:28.207Z",
       "updatedAt": "2026-10-03T08:23:28.207Z"
     }
@@ -151,6 +156,7 @@ Errors: `400` if `id` is not a positive integer (`abc`, `0`, `-1`, `1.5`); `404`
 | `description` | no | string, max 2000 chars | `""` |
 | `priority` | no | `low` / `medium` / `high` | `medium` |
 | `dueDate` | no | `YYYY-MM-DD` or `null` | `null` |
+| `assigneeId` | no | positive integer or `null` | `null` (unassigned) |
 
 `id`, `completed`, `createdAt` and `updatedAt` are set by the server. Sending them (or any unknown field) is a `400`, so typos like `titel` are caught instead of silently ignored.
 
@@ -178,6 +184,7 @@ Send **only the fields you want to change** (at least one). Fields not sent stay
 | `description` | string, max 2000 chars |
 | `priority` | `low` / `medium` / `high` |
 | `dueDate` | `YYYY-MM-DD`, or **`null` to remove the due date** |
+| `assigneeId` | positive integer of an existing person, or **`null` to clear the assignee** |
 | `completed` | boolean |
 
 Examples:
@@ -213,6 +220,28 @@ Errors: `400` for an invalid id; `404` if the todo does not exist (including a s
 ```
 
 Returns `200` with the count (also when it is `0`).
+
+### List people
+
+`GET /api/people`
+
+`200` and the people sorted by name, A→Z, ignoring letter case. No query parameters.
+
+```json
+{ "data": [{ "id": 1, "name": "Priya" }] }
+```
+
+### Create a person
+
+`POST /api/people`
+
+| Field | Required | Type |
+|---|---|---|
+| `name` | **yes** | string, trimmed, 1–100 characters |
+
+`201` and `{ "data": { "id", "name" } }`, with header `Location: /api/people/1`.
+
+A name that matches an existing person, ignoring case, is `400` with field `name`. Unknown fields are rejected. There is no get-one, update, or delete for people.
 
 ---
 
@@ -258,6 +287,8 @@ POST /api/todos
 | `description` | String, trimmed, max 2000 characters |
 | `priority` | One of `low`, `medium`, `high` |
 | `dueDate` | Real calendar date `YYYY-MM-DD` (leap years checked; `2026-02-30` is rejected) or `null` |
+| `assigneeId` | Positive integer that exists in `people`, or `null`. `0`, fractions, and numeric strings are rejected. An unknown id is `400` on field `assigneeId` |
 | `completed` | `true` or `false` (not `"true"`, not `1`) |
 | Body | Must be a JSON object; unknown fields are rejected |
 | `search` | Trimmed, max 200 characters; `%` and `_` are matched literally |
+| `name` (person) | String, trimmed, 1–100 characters. Unique, ignoring letter case |

@@ -1,11 +1,15 @@
 import express from "express";
 import { existsSync } from "node:fs";
+import { createPersonController } from "./controllers/person.controller.js";
 import { createTodoController } from "./controllers/todo.controller.js";
 import type { DB } from "./db/database.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import { requestLogger } from "./middleware/request-logger.js";
+import { PersonRepository } from "./repositories/person.repository.js";
 import { TodoRepository } from "./repositories/todo.repository.js";
+import { createPersonRouter } from "./routes/person.routes.js";
 import { createTodoRouter } from "./routes/todo.routes.js";
+import { PersonService } from "./services/person.service.js";
 import { TodoService } from "./services/todo.service.js";
 
 export interface AppOptions {
@@ -35,14 +39,17 @@ export function createApp(db: DB, options: AppOptions = {}) {
   // Parse JSON request bodies into req.body (default size limit: 100kb)
   app.use(express.json());
 
-  // Wire the layers together
-  const service = new TodoService(new TodoRepository(db));
-  const controller = createTodoController(service);
+  // Wire the layers together. One people repository is shared so both
+  // services see the same rows.
+  const people = new PersonRepository(db);
+  const todoService = new TodoService(new TodoRepository(db), people);
+  const personService = new PersonService(people);
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
   });
-  app.use("/api/todos", createTodoRouter(controller));
+  app.use("/api/todos", createTodoRouter(createTodoController(todoService)));
+  app.use("/api/people", createPersonRouter(createPersonController(personService)));
 
   // Any other /api URL → JSON 404 (instead of Express's default HTML page)
   app.use("/api", notFoundHandler);
